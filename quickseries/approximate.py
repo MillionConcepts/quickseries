@@ -4,7 +4,8 @@ import re
 from typing import Callable, Union, Any
 
 from cytoolz import groupby
-from dustgoggles.dynamic import define, getsource, compile_source
+from dustgoggles.dynamic import compile_source, define, getsource
+from dustgoggles.structures import listify
 import numpy as np
 import sympy as sp
 
@@ -38,7 +39,9 @@ def series_lambda(
     # noinspection PyTypeChecker
     terms, args = series.args[:-1], sorted(func.free_symbols)
     if add_coefficients is True:
-        c_syms = sp.symbols(",".join([f"a_{n}" for n in range(len(terms))]))
+        c_syms = listify(
+            sp.symbols(",".join([f"a_{n}" for n in range(len(terms))]))
+        )
         terms = [t * sym for t, sym in zip(terms, c_syms)]
         args += c_syms
     expr = sum(terms)
