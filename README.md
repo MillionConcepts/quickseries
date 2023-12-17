@@ -1,8 +1,8 @@
 # quickseries
 
-`quickseries` generates functions that perform fast vectorized power series 
-approximations of locally-continuous functions. `quickseries`is in alpha; bug 
-reports are appreciated.
+`quickseries` generates Python functions that perform fast vectorized power 
+series approximations of locally-continuous univariate mathematical functions. 
+`quickseries`is in alpha; bug reports are appreciated.
 
 Install from source using `python setup.py`. Dependencies are also described
 in a Conda `environment.yml` file.
