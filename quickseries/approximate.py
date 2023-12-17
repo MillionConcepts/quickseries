@@ -18,7 +18,7 @@ EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
 
 
-def lambdify_expr(func: Union[str, sp.Expr], module: str = "numpy") -> LmSig:
+def lambdify(func: Union[str, sp.Expr], module: str = "numpy") -> LmSig:
     if isinstance(func, str):
         func = sp.sympify(func)
     # noinspection PyTypeChecker
@@ -149,7 +149,7 @@ def quickseries(
     resolution: int = 100,
     rewrite: bool = True
 ) -> LmSig:
-    lamb = lambdify_expr(func)
+    lamb = lambdify(func)
     if len(getfullargspec(lamb).args) != 1:
         raise ValueError("This function only supports univariate functions.")
     approx, expr = series_lambda(func, x0, n_terms, True)
