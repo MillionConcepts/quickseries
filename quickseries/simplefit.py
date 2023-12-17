@@ -26,6 +26,7 @@ def fit_wrap(func, dimensionality, fit_parameters):
     return wrapped_fit
 
 
+# TODO: afford bounds
 def fit(
     func: Callable,
     dimensionality: int,
