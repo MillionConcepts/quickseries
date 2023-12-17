@@ -1,0 +1,10 @@
+name: quickseries
+channels:
+  - conda-forge
+dependencies:
+  - python >= 3.10
+  - dustgoggles
+  - numpy
+  - scipy
+  - sympy
+
