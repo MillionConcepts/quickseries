@@ -154,7 +154,7 @@ def quickseries(
         raise ValueError("This function only supports univariate functions.")
     approx, expr = series_lambda(func, x0, n_terms, True)
     vec = np.linspace(*bounds, resolution)
-    params, _ = fit(approx, 1, vec, lamb(vec))
+    params, _ = fit(approx, 1, vec, lamb(vec), bounds=bounds)
     # insert coefficients into polynomial
     substituted = expr.subs(
         {f'a_{i}': coef for i, coef in enumerate(params)}

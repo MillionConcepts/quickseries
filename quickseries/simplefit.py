@@ -1,7 +1,7 @@
 """lightweight version of `moonbow`'s polynomial fit functionality"""
 from functools import wraps
 from inspect import Parameter, signature
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Union
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -26,13 +26,13 @@ def fit_wrap(func, dimensionality, fit_parameters):
     return wrapped_fit
 
 
-# TODO: afford bounds
 def fit(
     func: Callable,
     dimensionality: int,
     points: np.ndarray,
     dependent_variable: np.ndarray,
     guess: Optional[Sequence[float]] = None,
+    bounds: Optional[Sequence[Union[float, np.ndarray]]] = (-np.inf, np.inf)
 ):
     sig = signature(func)
     assert dimensionality < len(sig.parameters), (
@@ -60,5 +60,6 @@ def fit(
         points,
         dependent_variable,
         maxfev=20000,
+        bounds=bounds,
         p0=guess,
     )
