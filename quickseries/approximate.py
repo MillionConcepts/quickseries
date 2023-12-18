@@ -1,7 +1,7 @@
 from inspect import getfullargspec
 from itertools import chain
 import re
-from typing import Callable, Union, Any, Optional
+from typing import Callable, Union, Any, Optional, Sequence
 
 from cytoolz import groupby
 from dustgoggles.dynamic import compile_source, define, getsource
@@ -72,11 +72,11 @@ def regexponents(text: str) -> tuple[int]:
 
 
 def optimize_exponents(
-    exps: tuple[int]
+    exps: Sequence[int]
 ) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
-    replacements = {e: [e] for e in exps}
+    replacements = [(e, [e]) for e in exps]
     reduced = set()
-    extant = tuple(chain(*replacements.values()))
+    extant = tuple(chain(*[r[1] for r in replacements]))
     while True:
         counts = {
             k: len(v)
@@ -88,17 +88,17 @@ def optimize_exponents(
         if len(counts) == 1:
             factor = list(counts.keys())[0]
             if list(counts.values())[0] == 1:
-                for k, v in replacements.items():
+                for k, v in replacements:
                     if factor not in v:
                         continue
-                    replacements[k] = [
+                    v[:] = [
                         f for f in v if f != factor
                     ] + [1 for _ in range(factor)]
                     break
                 break
         else:
             factor = sorted(counts.keys())[-2]
-        for k, v in replacements.items():
+        for k, v in replacements:
             factorization = []
             for f in v:
                 if f in reduced or f <= factor:
@@ -113,14 +113,14 @@ def optimize_exponents(
                     difference = difference - factor
                 if difference > 0:
                     factorization.append(difference)
-            replacements[k] = factorization
+            v[:] = factorization
         reduced.add(factor)
-        extant = tuple(chain(*replacements.values()))
-    replacements = {
-        k: replacements[k] for k in sorted(set(replacements.keys()))
-    }
+        extant = tuple(chain(*[r[1] for r in replacements]))
+    replacements = {k: v for k, v in replacements}
     variables = {1: [1]}
     for e in sorted(set(extant)):
+        if extant.count(e) == 1:
+            continue
         vfactor, remainder = [], e
         while remainder > 0:
             pick = max([v for v in variables.keys() if v <= remainder])
@@ -141,8 +141,6 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
     replacements, variables = optimize_exponents(regexponents(polyexpr))
     lines = [f"def _lambdifygenerated({varname}):"]
     for k, v in variables.items():
-        if max(v) == 1:
-            continue
         multiplicands = []
         for power in v:
             if power == 1:
