@@ -1,7 +1,7 @@
 from inspect import getfullargspec
 from itertools import chain
 import re
-from typing import Callable, Union, Any
+from typing import Callable, Union, Any, Optional
 
 from cytoolz import groupby
 from dustgoggles.dynamic import compile_source, define, getsource
@@ -16,6 +16,17 @@ LmSig = Callable[[Any], Union[np.ndarray, float]]
 
 EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
+
+SIMPLE_POLY_ELEMENTS = (
+    sp.Add, sp.Mul, sp.Number, sp.Symbol, sp.Pow, sp.Integer
+)
+
+
+def is_simple_poly(expr: sp.Expr) -> bool:
+    for arg in sp.preorder_traversal(expr):
+        if not isinstance(arg, SIMPLE_POLY_ELEMENTS):
+            return False
+    return True
 
 
 def lambdify(func: Union[str, sp.Expr], module: str = "numpy") -> LmSig:
@@ -144,29 +155,34 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
 def quickseries(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     bounds: tuple[float, float] = (-1, 1),
-    x0: float = 0,
     n_terms: int = 9,
+    x0: Optional[float] = None,
     resolution: int = 100,
-    rewrite: bool = True
+    precompute_factors: bool = True,
+    approx_poly: bool = False
 ) -> LmSig:
-    lamb = lambdify(func)
-    if len(getfullargspec(lamb).args) != 1:
+    expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
+    if len(expr.free_symbols) != 1:
         raise ValueError("This function only supports univariate functions.")
-    approx, expr = series_lambda(func, x0, n_terms, True)
-    vec = np.linspace(*bounds, resolution)
-    params, _ = fit(approx, 1, vec, lamb(vec), bounds=bounds)
-    # insert coefficients into polynomial
-    substituted = expr.subs(
-        {f'a_{i}': coef for i, coef in enumerate(params)}
-    )
-    # rewrite polynomial in horner form for fast evaluation and convert
-    # it to a numpy function
-    polyfunc = sp.lambdify(
-        getfullargspec(lamb).args[0],
-        sp.polys.polyfuncs.horner(substituted),
-        "numpy"
-    )
+    if approx_poly is False and is_simple_poly(expr):
+        polyfunc = lambdify(sp.polys.polyfuncs.horner(expr))
+    else:
+        x0 = x0 if x0 is not None else np.mean(bounds)
+        approx, expr = series_lambda(func, x0, n_terms, True)
+        vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
+        params, _ = fit(approx, 1, vec, lamb(vec), bounds=bounds)
+        # insert coefficients into polynomial
+        substituted = expr.subs(
+            {f'a_{i}': coef for i, coef in enumerate(params)}
+        )
+        # rewrite polynomial in horner form for fast evaluation and convert
+        # it to a numpy function
+        polyfunc = sp.lambdify(
+            getfullargspec(lamb).args[0],
+            sp.polys.polyfuncs.horner(substituted),
+            "numpy"
+        )
     # optionally, rewrite it to precompute stray powers
-    if rewrite is True:
+    if precompute_factors is True:
         polyfunc = rewrite_precomputed(polyfunc)
     return polyfunc
