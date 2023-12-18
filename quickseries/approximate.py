@@ -169,9 +169,11 @@ def quickseries(
     n_terms: int = 9,
     x0: Optional[float] = None,
     resolution: int = 100,
-    precompute_factors: bool = True,
-    approx_poly: bool = False
+    prefactor: Optional[bool] = None,
+    approx_poly: bool = False,
+    jit: bool = False
 ) -> LmSig:
+    prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
     if len(expr.free_symbols) != 1:
         raise ValueError("This function only supports univariate functions.")
@@ -201,6 +203,10 @@ def quickseries(
              ("scipy", "numpy")
         )
     # optionally, rewrite it to precompute stray powers
-    if precompute_factors is True:
+    if prefactor is True:
         polyfunc = rewrite_precomputed(polyfunc)
+    # optionally, jit it with numba
+    if jit is True:
+        import numba
+        polyfunc = numba.njit(polyfunc)
     return polyfunc

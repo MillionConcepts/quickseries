@@ -4,7 +4,7 @@
 series approximations of locally-continuous univariate mathematical functions. 
 `quickseries`is in alpha; bug reports are appreciated.
 
-Install from source using `python setup.py`. Dependencies are also described
+Install from source using `pip install .`. Dependencies are also described
 in a Conda `environment.yml` file.
 
 Further documentation forthcoming.
@@ -76,3 +76,10 @@ but instead simply attempts to rewrite it in a more efficient form.
 * At present, `quickseries()` only works on univariate functions that are 
 locally continuous within `bounds`. It is also not guaranteed to not work well, 
 or at all, on all such functions within all intervals.
+* `quickseries()` is also capable of auto-jitting the functions it generates
+with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
+install it with your preferred package manager.
+  * In addition to the other inconveniences that may arise from just-in-time
+  compilation, some functions that work well without `numba` may not work well
+  with `numba`. However, it can provide a significant performance boost in some
+  cases.

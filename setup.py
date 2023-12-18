@@ -7,6 +7,7 @@ setup(
     url="https://github.com/millionconcepts/quickseries.git",
     author="Michael St. Clair",
     author_email="mstclair@millionconcepts.com",
-    python_requires=">=3.10",
+    python_requires=">=3.11",
     install_requires=["dustgoggles", "numpy", "scipy", "sympy"],
+    extras_require={"jit": "numba"}
 )
