@@ -86,9 +86,16 @@ def optimize_exponents(
         if len(counts) == 0:
             break
         if len(counts) == 1:
-            if list(counts.values())[0] == 1:
-                break
             factor = list(counts.keys())[0]
+            if list(counts.values())[0] == 1:
+                for k, v in replacements.items():
+                    if factor not in v:
+                        continue
+                    replacements[k] = [
+                        f for f in v if f != factor
+                    ] + [1 for _ in range(factor)]
+                    break
+                break
         else:
             factor = sorted(counts.keys())[-2]
         for k, v in replacements.items():
@@ -134,6 +141,8 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
     replacements, variables = optimize_exponents(regexponents(polyexpr))
     lines = [f"def _lambdifygenerated({varname}):"]
     for k, v in variables.items():
+        if max(v) == 1:
+            continue
         multiplicands = []
         for power in v:
             if power == 1:
