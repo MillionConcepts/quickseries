@@ -69,6 +69,10 @@ but instead simply attempts to rewrite it in a more efficient form.
     `numpy` arrays.  
     * If you want `quickseries()` to actually create an approximation of a 
     simple polynomial, pass `approx_poly=True`.
+      * If `n_terms` >= the order of the input polynomial, the 
+      `quickseries()`-generated function will typically be very similar to a 
+      simple rewrite of the input polynomial. `n_terms` effectively caps at the
+      order of the input polynomial.
 * At present, `quickseries()` only works on univariate functions that are 
 locally continuous within `bounds`. It is also not guaranteed to not work well, 
 or at all, on all such functions within all intervals.
