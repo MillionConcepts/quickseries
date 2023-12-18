@@ -74,8 +74,8 @@ but instead simply attempts to rewrite it in a more efficient form.
       simple rewrite of the input polynomial. `n_terms` effectively caps at the
       order of the input polynomial.
 * At present, `quickseries()` only works on univariate functions that are 
-locally continuous within `bounds`. It is also not guaranteed to not work well, 
-or at all, on all such functions within all intervals.
+locally continuous within `bounds`. It is also not guaranteed to work well, or 
+at all, on all such functions within all intervals.
 * `quickseries()` is also capable of auto-jitting the functions it generates
 with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
 install it with your preferred package manager.
