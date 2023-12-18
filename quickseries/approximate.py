@@ -12,7 +12,7 @@ import sympy as sp
 from quickseries.simplefit import fit
 
 LmSig = Callable[[Any], Union[np.ndarray, float]]
-"""signature of sympy-lambdified numpy functions"""
+"""signature of sympy-lambdified numpy/scipy functions"""
 
 EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
@@ -29,11 +29,14 @@ def is_simple_poly(expr: sp.Expr) -> bool:
     return True
 
 
-def lambdify(func: Union[str, sp.Expr], module: str = "numpy") -> LmSig:
+def lambdify(
+    func: Union[str, sp.Expr],
+    modules: Union[str, Sequence[str]] = ("scipy", "numpy")
+) -> LmSig:
     if isinstance(func, str):
         func = sp.sympify(func)
     # noinspection PyTypeChecker
-    return sp.lambdify(sorted(func.free_symbols), func, module)
+    return sp.lambdify(sorted(func.free_symbols), func, modules)
 
 
 def series_lambda(
@@ -154,7 +157,8 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
         )
         polyexpr = polyexpr.replace(f"{varname}**{k}", substitution)
     lines.append(f"    return {polyexpr}")
-    opt = define(compile_source("\n".join(lines)))
+    # noinspection PyUnresolvedReferences
+    opt = define(compile_source("\n".join(lines)), poly_lambda.__globals__)
     opt.__doc__ = ("\n".join(map(str.strip, lines[1:])))
     return opt
 
@@ -177,7 +181,14 @@ def quickseries(
         x0 = x0 if x0 is not None else np.mean(bounds)
         approx, expr = series_lambda(func, x0, n_terms, True)
         vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
-        params, _ = fit(approx, 1, vec, lamb(vec), bounds=bounds)
+        try:
+            dep = lamb(vec)
+        except TypeError as err:
+            # this is a potentially slow but unavoidable case
+            if "converted to Python scalars" not in str(err):
+                raise
+            dep = np.array([lamb(v) for v in vec])
+        params, _ = fit(approx, 1, vec, dep, bounds=bounds)
         # insert coefficients into polynomial
         substituted = expr.subs(
             {f'a_{i}': coef for i, coef in enumerate(params)}
@@ -187,7 +198,7 @@ def quickseries(
         polyfunc = sp.lambdify(
             getfullargspec(lamb).args[0],
             sp.polys.polyfuncs.horner(substituted),
-            "numpy"
+             ("scipy", "numpy")
         )
     # optionally, rewrite it to precompute stray powers
     if precompute_factors is True:
