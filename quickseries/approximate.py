@@ -155,7 +155,7 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
         polyexpr = polyexpr.replace(f"{varname}**{k}", substitution)
     lines.append(f"    return {polyexpr}")
     opt = define(compile_source("\n".join(lines)))
-    opt.__doc__ = ("\n".join(lines))
+    opt.__doc__ = ("\n".join(map(str.strip, lines[1:])))
     return opt
 
 
