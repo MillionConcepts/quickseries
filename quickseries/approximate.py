@@ -42,13 +42,13 @@ def lambdify(
 def series_lambda(
     func: Union[str, sp.Expr],
     x0: float = 0,
-    n_terms: int = 9,
+    order: int = 9,
     add_coefficients: bool = False,
     module: str = "numpy",
 ) -> tuple[LmSig, sp.Expr]:
     if isinstance(func, str):
         func = sp.sympify(func)
-    series = sp.series(func, x0=x0, n=n_terms)
+    series = sp.series(func, x0=x0, n=order)
     # [:-1] is to remove O(x) term
     # noinspection PyTypeChecker
     terms, args = series.args[:-1], sorted(func.free_symbols)
@@ -166,7 +166,7 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
 def quickseries(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     bounds: tuple[float, float] = (-1, 1),
-    n_terms: int = 9,
+    order: int = 9,
     x0: Optional[float] = None,
     resolution: int = 100,
     prefactor: Optional[bool] = None,
@@ -181,7 +181,7 @@ def quickseries(
         polyfunc = lambdify(sp.polys.polyfuncs.horner(expr))
     else:
         x0 = x0 if x0 is not None else np.mean(bounds)
-        approx, expr = series_lambda(func, x0, n_terms, True)
+        approx, expr = series_lambda(func, x0, order, True)
         vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
         try:
             dep = lamb(vec)

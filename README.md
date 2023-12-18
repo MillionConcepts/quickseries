@@ -1,13 +1,17 @@
 # quickseries
 
 `quickseries` generates Python functions that perform fast vectorized power 
-series approximations of locally-continuous univariate mathematical functions. 
+series approximations of locally-continuous univariate mathematical functions.
+It can provide performance improvements ranging from ~3x (simple functions, no
+fiddling around with parameters) to ~100x (complicated functions, some parameter
+tuning).
+
 `quickseries`is in alpha; bug reports are appreciated.
 
 Install from source using `pip install .`. Dependencies are also described
 in a Conda `environment.yml` file.
 
-Further documentation forthcoming.
+Examples and tips follow. Further documentation forthcoming.
 
 ## example of use
 
@@ -16,7 +20,7 @@ Further documentation forthcoming.
 >>> from quickseries import quickseries
 
 >>> bounds = (-np.pi, np.pi)
->>> approx = quickseries("sin(x)*cos(x)", x0=0, n_terms=12, bounds=bounds)
+>>> approx = quickseries("sin(x)*cos(x)", x0=0, order=12, bounds=bounds)
 >>> x = np.linspace(*bounds, 100000)
 >>> print(f"max error: {max(abs(np.sin(x) * np.cos(x) - approx(x)))}")
 >>> print("original runtime:")
@@ -35,15 +39,15 @@ approx runtime:
 
 * Narrowing `bounds` will tend to make the approximation more accurate within
 those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
-~20x greater precision within the (-1, 1) interval -- although the 
-approximation will become very poor before it reaches +/- pi.
-* Increasing `n_terms` will tend to make the approximation slower but more 
-precise. In the example above, increasing `n_terms` to 14 provides ~20x 
+~20x greater precision within the (-1, 1) interval (with the downside that 
+the resulting approximation will get pretty bad past about +/-pi/2). 
+* Increasing `order` will tend to make the approximation slower but more 
+precise. In the example above, increasing `order` to 14 provides ~20x 
 greater precision but makes the approximation ~20% slower.
-  * This tends to have diminishing returns. Increasing `n_terms` to 30 provides
-  no meaningful increase in precision over 14 terms, but makes the 
-  approximation *slower* than `np.sin(x) * np.cos(x)`.
-  * Setting `n_terms` too high can also cause the approximation algorithm to
+  * This tends to have diminishing returns. In the example above, increasing 
+  `order` to 30 provides no meaningful increase in precision over `order=14`, 
+  but makes the approximation *slower* than `np.sin(x) * np.cos(x)`.
+  * Setting `order` too high can also cause the approximation algorithm to
   fail entirely.
   * The location of precision/performance "sweet spots" in the parameter space 
   depends on the function and the approximation bounds. If you want to 
@@ -60,7 +64,7 @@ space/memory-efficient even if they are more time/compute-efficient.
 * By default, if you pass a simple polynomial expression to `quickseries()`
 (e.g. `"x**4 + 2 * x**3"`), it does not actually generate an approximation, 
 but instead simply attempts to rewrite it in a more efficient form.
-    * `n_terms`, `bounds`, and `x0` are ignored in this "rewrite" mode.
+    * `order`, `bounds`, and `x0` are ignored in this "rewrite" mode.
     * This type of `quickseries()`-generated function should produce the same 
     results as any other Python function that straightforwardly implements a
     form of the input polynomial (down to floating-point error).
@@ -69,10 +73,10 @@ but instead simply attempts to rewrite it in a more efficient form.
     `numpy` arrays.  
     * If you want `quickseries()` to actually create an approximation of a 
     simple polynomial, pass `approx_poly=True`.
-      * If `n_terms` >= the order of the input polynomial, the 
-      `quickseries()`-generated function will typically be very similar to a 
-      simple rewrite of the input polynomial. `n_terms` effectively caps at the
-      order of the input polynomial.
+      * There is generally no good reason to set `order` >= the order of the 
+      input polynomial. In this case, `quickseries()`-generated function will 
+      typically be very similar to, but slightly worse than, a simple rewrite 
+      of the input polynomial.
 * At present, `quickseries()` only works on univariate functions that are 
 locally continuous within `bounds`. It is also not guaranteed to work well, or 
 at all, on all such functions within all intervals.
@@ -83,3 +87,4 @@ install it with your preferred package manager.
   compilation, some functions that work well without `numba` may not work well
   with `numba`. However, it can provide a significant performance boost in some
   cases.
+
