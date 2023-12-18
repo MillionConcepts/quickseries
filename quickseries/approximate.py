@@ -1,5 +1,5 @@
 from inspect import getfullargspec
-from itertools import chain
+from itertools import chain, count
 import re
 from typing import Callable, Union, Any, Optional, Sequence
 
@@ -46,21 +46,33 @@ def series_lambda(
     add_coefficients: bool = False,
     module: str = "numpy",
 ) -> tuple[LmSig, sp.Expr]:
-    if isinstance(func, str):
-        func = sp.sympify(func)
+    func = sp.sympify(func) if isinstance(func, str) else func
     series = sp.series(func, x0=x0, n=order)
-    # [:-1] is to remove O(x) term
     # noinspection PyTypeChecker
-    terms, args = series.args[:-1], sorted(func.free_symbols)
-    if add_coefficients is True:
-        c_syms = listify(
-            sp.symbols(",".join([f"a_{n}" for n in range(len(terms))]))
-        )
-        terms = [t * sym for t, sym in zip(terms, c_syms)]
-        args += c_syms
-    expr = sum(terms)
+    args, syms = series.args, sorted(func.free_symbols)
+    # remove Order (limit behavior) terms, try to split constants from
+    # polynomial terms
+    outargs, coefs = [], count()
+    for a in args:
+        if isinstance(a, sp.Order):
+            continue
+        elif isinstance(a, (sp.Mul, sp.Symbol)):
+            if add_coefficients is True:
+                coefficient = sp.symbols(f"a_{next(coefs)}")
+                outargs.append(coefficient * a)
+                syms.append(coefficient)
+            else:
+                outargs.append(a)
+        elif isinstance((number := a.evalf()), sp.Number):
+            outargs.append(number)
+        else:
+            raise ValueError(
+                f"don't know how to handle expression element {a} of "
+                f"type({type(a)})"
+            )
+    expr = sum(outargs)
     # noinspection PyTypeChecker
-    return sp.lambdify(args, expr, module), expr
+    return sp.lambdify(syms, expr, module), expr
 
 
 def lastline(func: Callable) -> str:
