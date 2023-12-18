@@ -202,7 +202,7 @@ def quickseries(
             if "converted to Python scalars" not in str(err):
                 raise
             dep = np.array([lamb(v) for v in vec])
-        params, _ = fit(approx, 1, vec, dep, bounds=bounds)
+        params, _ = fit(approx, 1, vec, dep)
         # insert coefficients into polynomial
         substituted = expr.subs(
             {f'a_{i}': coef for i, coef in enumerate(params)}

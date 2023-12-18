@@ -32,7 +32,6 @@ def fit(
     points: np.ndarray,
     dependent_variable: np.ndarray,
     guess: Optional[Sequence[float]] = None,
-    bounds: Optional[Sequence[Union[float, np.ndarray]]] = (-np.inf, np.inf)
 ):
     sig = signature(func)
     assert dimensionality < len(sig.parameters), (
@@ -60,6 +59,5 @@ def fit(
         points,
         dependent_variable,
         maxfev=20000,
-        bounds=bounds,
         p0=guess,
     )
