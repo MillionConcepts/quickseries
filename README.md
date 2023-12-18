@@ -12,7 +12,6 @@ Further documentation forthcoming.
 ## example of use
 
 ```
->>> from timeit import timeit
 >>> import numpy as np
 >>> from quickseries import quickseries
 
