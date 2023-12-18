@@ -100,7 +100,7 @@ def optimize_exponents(
                     break
                 break
         else:
-            factor = sorted(counts.keys())[-2]
+            factor = sorted(counts.items(), key=lambda kv: kv[1])[-1][0]
         for k, v in replacements:
             factorization = []
             for f in v:
