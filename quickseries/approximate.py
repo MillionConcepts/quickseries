@@ -81,6 +81,9 @@ def optimize_exponents(
     reduced = set()
     extant = tuple(chain(*[r[1] for r in replacements]))
     while True:
+        if len(extant) == 1:
+            replacements[0][1][:] = [1 for _ in range(replacements[0][0])]
+            break
         counts = {
             k: len(v)
             for k, v in groupby(lambda x: x, extant).items()
@@ -89,18 +92,12 @@ def optimize_exponents(
         if len(counts) == 0:
             break
         if len(counts) == 1:
-            factor = list(counts.keys())[0]
-            if list(counts.values())[0] == 1:
-                for k, v in replacements:
-                    if factor not in v:
-                        continue
-                    v[:] = [
-                        f for f in v if f != factor
-                    ] + [1 for _ in range(factor)]
-                    break
-                break
+            break
+        elif counts[max(counts)] > 1:
+            reduced.add(max(counts))
+            continue
         else:
-            factor = sorted(counts.items(), key=lambda kv: kv[1])[-1][0]
+            factor = sorted(counts.keys())[0]
         for k, v in replacements:
             factorization = []
             for f in v:
@@ -122,8 +119,11 @@ def optimize_exponents(
     replacements = {k: v for k, v in replacements}
     variables = {1: [1]}
     for e in sorted(set(extant)):
-        if extant.count(e) == 1:
+        if e == 1:
             continue
+        if exps.count(e) == 1:
+            if not any(k > e for k, v in replacements.items()):
+                continue
         vfactor, remainder = [], e
         while remainder > 0:
             pick = max([v for v in variables.keys() if v <= remainder])
