@@ -161,7 +161,7 @@ def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
                 f"{match.group(3)}"
             ).strip()
         last = match.span()[1]
-    return out
+    return out + line[last:]
 
 
 def rewrite(
