@@ -101,9 +101,7 @@ def optimize_exponents(
             for k, v in groupby(lambda x: x, extant).items()
             if k not in reduced
         }
-        if len(counts) == 0:
-            break
-        if len(counts) == 1:
+        if len(counts) < 2:
             break
         elif counts[max(counts)] > 1:
             reduced.add(max(counts))
