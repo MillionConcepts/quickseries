@@ -1,7 +1,7 @@
 from inspect import getfullargspec
 from itertools import chain, count
 import re
-from typing import Callable, Union, Any, Optional, Sequence
+from typing import Callable, Union, Any, Optional, Sequence, Literal
 
 from cytoolz import groupby
 from dustgoggles.dynamic import compile_source, define, getsource
@@ -146,15 +146,40 @@ def optimize_exponents(
     return replacements, variables
 
 
-def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
+def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
+    constructor = f"numpy.float{precision}"
+    for number in re.findall(r"[+* (]([\d.].*?)[+* )]", line):
+        line = line.replace(number, f"{constructor}({number})")
+    return line
+
+
+def rewrite(
+    poly_lambda: LmSig,
+    precompute: bool = True,
+    precision: Optional[Literal[16, 32, 64]] = None
+) -> LmSig:
+    if precompute is False and precision is None:
+        return poly_lambda
     # name of single argument to the lambdified function
     varname = getfullargspec(poly_lambda).args[0]
+    lines = [f"def _lambdifygenerated({varname}):"]
     # sympy will always place this on a single line; it includes
     # the Python expression form of the hornerized polynomial
     # and a return statement; lastline() strips it
     polyexpr = lastline(poly_lambda)
+    if precompute is True:
+        polyexpr, lines = _rewrite_precomputed(polyexpr, varname, lines)
+    if precision is not None:
+        polyexpr = force_line_precision(polyexpr, precision)
+    lines.append(f"    return {polyexpr}")
+    # noinspection PyUnresolvedReferences
+    opt = define(compile_source("\n".join(lines)), poly_lambda.__globals__)
+    opt.__doc__ = ("\n".join(map(str.strip, lines[1:])))
+    return opt
+
+
+def _rewrite_precomputed(polyexpr, varname, lines):
     replacements, variables = optimize_exponents(regexponents(polyexpr))
-    lines = [f"def _lambdifygenerated({varname}):"]
     for k, v in variables.items():
         multiplicands = []
         for power in v:
@@ -168,11 +193,7 @@ def rewrite_precomputed(poly_lambda: LmSig) -> LmSig:
             [f"{varname}{r}" if r != 1 else varname for r in v]
         )
         polyexpr = polyexpr.replace(f"{varname}**{k}", substitution)
-    lines.append(f"    return {polyexpr}")
-    # noinspection PyUnresolvedReferences
-    opt = define(compile_source("\n".join(lines)), poly_lambda.__globals__)
-    opt.__doc__ = ("\n".join(map(str.strip, lines[1:])))
-    return opt
+    return polyexpr, lines
 
 
 def quickseries(
@@ -183,15 +204,15 @@ def quickseries(
     resolution: int = 100,
     prefactor: Optional[bool] = None,
     approx_poly: bool = False,
-    jit: bool = False
+    jit: bool = False,
+    bit_depth: Optional[Literal[16, 32, 64]] = None,
 ) -> LmSig:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
     if len(expr.free_symbols) != 1:
         raise ValueError("This function only supports univariate functions.")
-    if approx_poly is False and is_simple_poly(expr):
-        polyfunc = lambdify(sp.polys.polyfuncs.horner(expr))
-    else:
+    free = tuple(expr.free_symbols)[0]
+    if approx_poly is True or not is_simple_poly(expr):
         x0 = x0 if x0 is not None else np.mean(bounds)
         approx, expr = series_lambda(func, x0, order, True)
         vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
@@ -204,19 +225,12 @@ def quickseries(
             dep = np.array([lamb(v) for v in vec])
         params, _ = fit(approx, 1, vec, dep)
         # insert coefficients into polynomial
-        substituted = expr.subs(
-            {f'a_{i}': coef for i, coef in enumerate(params)}
-        )
-        # rewrite polynomial in horner form for fast evaluation and convert
-        # it to a numpy function
-        polyfunc = sp.lambdify(
-            getfullargspec(lamb).args[0],
-            sp.polys.polyfuncs.horner(substituted),
-             ("scipy", "numpy")
-        )
-    # optionally, rewrite it to precompute stray powers
-    if prefactor is True:
-        polyfunc = rewrite_precomputed(polyfunc)
+        expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
+    # rewrite polynomial in horner form for fast evaluation
+    expr = sp.polys.polyfuncs.horner(expr)
+    polyfunc = sp.lambdify(free, expr, ("scipy", "numpy"))
+    # optionally, rewrite it to precompute stray powers and force precision
+    polyfunc = rewrite(polyfunc, prefactor, bit_depth)
     # optionally, jit it with numba
     if jit is True:
         import numba
