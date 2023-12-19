@@ -56,7 +56,7 @@ def series_lambda(
     for a in args:
         if isinstance(a, sp.Order):
             continue
-        elif isinstance(a, (sp.Mul, sp.Symbol)):
+        elif isinstance(a, (sp.Mul, sp.Symbol, sp.Pow)):
             if add_coefficients is True:
                 coefficient = sp.symbols(f"a_{next(coefs)}")
                 outargs.append(coefficient * a)
@@ -148,9 +148,20 @@ def optimize_exponents(
 
 def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
     constructor = f"numpy.float{precision}"
-    for number in re.findall(r"[+* (]([\d.].*?)[+* )]", line):
-        line = line.replace(number, f"{constructor}({number})")
-    return line
+    # TODO: this is _not_ a general solution
+    last, out = 0, ""
+    for match in re.finditer(r"([+* (-]+)([\d.].*?)([+* )-])", line):
+        out += line[last:match.span()[0]]
+        # don't replace exponents
+        if match.group(1) == "**":
+            out += line[slice(*match.span())]
+        else:
+            out += (
+                f"{match.group(1)}{constructor}({match.group(2)})"
+                f"{match.group(3)}"
+            ).strip()
+        last = match.span()[1]
+    return out
 
 
 def rewrite(
