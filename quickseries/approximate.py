@@ -150,16 +150,16 @@ def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
     constructor = f"numpy.float{precision}"
     # TODO: this is _not_ a general solution
     last, out = 0, ""
-    for match in re.finditer(r"([+* (-]+)([\d.].*?)([+* )-]|$)", line):
+    for match in re.finditer(r"([+* (-]+)([\d.]+)(e[+\-]?\d+)?.*?([+* )]|$)", line):
         out += line[last:match.span()[0]]
         # don't replace exponents
         if match.group(1) == "**":
             out += line[slice(*match.span())]
         else:
-            out += (
-                f"{match.group(1)}{constructor}({match.group(2)})"
-                f"{match.group(3)}"
-            ).strip()
+            out += f"{match.group(1)}{constructor}({match.group(2)}"
+            if match.group(3) is not None:
+                out += match.group(3)
+            out += f"){match.group(4)}"
         last = match.span()[1]
     return out + line[last:]
 
