@@ -47,7 +47,8 @@ def series_lambda(
     module: str = "numpy",
 ) -> tuple[LmSig, sp.Expr]:
     func = sp.sympify(func) if isinstance(func, str) else func
-    series = sp.series(func, x0=x0, n=order)
+    # limiting precision of x0 is necessary due to a bug in sp.series
+    series = sp.series(func, x0=round(x0, 6), n=order)
     # noinspection PyTypeChecker
     args, syms = series.args, sorted(func.free_symbols)
     # remove Order (limit behavior) terms, try to split constants from
