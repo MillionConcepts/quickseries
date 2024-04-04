@@ -264,3 +264,34 @@ def quickseries(
         import numba
         polyfunc = numba.njit(polyfunc)
     return polyfunc
+
+
+def benchmark(
+    func: Union[str, sp.Expr, sp.core.function.FunctionClass],
+    offset_resolution: int = 10000,
+    timeit_cycles: int = 10000,
+    testbounds = "equal",
+    **quickkwargs
+):
+    lamb = lambdify(sp.sympify(func))
+    quick = quickseries(func, **quickkwargs)
+    if testbounds == "equal":
+        testbounds = quickkwargs.get("bounds", (-1, 1))
+    x_ax = np.linspace(*testbounds,  offset_resolution)
+    # TODO: should probably permit specifying dtype for jitted
+    #  functions -- both here and in primary quickseries().
+    approx_y, orig_y = quick(x_ax), lamb(x_ax)
+    approx_time = timeit.timeit(lambda: quick(x_ax), number=timeit_cycles)
+    orig_time = timeit.timeit(lambda: lamb(x_ax), number=timeit_cycles)
+    funcrange = min(orig_y), max(orig_y)
+    absdiff = max(abs(approx_y - orig_y))
+    orig_s = orig_time / timeit_cycles
+    approx_s = approx_time / timeit_cycles
+    return {
+        'absdiff': absdiff,
+        'reldiff': absdiff / (funcrange[1] - funcrange[0]),
+        'range': funcrange,
+        'orig_s': orig_s, 
+        'approx_s': approx_s,
+        'timeratio': approx_s / orig_s
+    }

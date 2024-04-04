@@ -37,10 +37,14 @@ approx runtime:
 
 ## tips
 
+* *NOTE: `quickseries.benchmark()` offers an easy way to test the precision and
+  efficiency of `quickseries.quickseries()`-generated approximations.*
 * Narrowing `bounds` will tend to make the approximation more accurate within
 those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
 ~20x greater precision within the (-1, 1) interval (with the downside that 
-the resulting approximation will get pretty bad past about +/-pi/2). 
+the resulting approximation will get pretty bad past about +/-pi/2).
+    * `quickseries()` tends to be much more effective closer to 0. You may be
+      able to get more use out of it if you shift/squeeze your data towards 0.
 * Increasing `order` will tend to make the approximation slower but more 
 precise. In the example above, increasing `order` to 14 provides ~20x 
 greater precision but makes the approximation ~20% slower.
