@@ -1,6 +1,7 @@
 from inspect import getfullargspec
 from itertools import chain, count
 import re
+import timeit
 from typing import Any, Callable, Literal, Optional, Sequence, Union
 
 from cytoolz import groupby
@@ -55,16 +56,17 @@ def series_lambda(
     # polynomial terms
     outargs, coefs = [], count()
     for a in args:
+        # NOTE: the Expr.evalf() calls are simply to try to evaluate
+        #  anything we can.
         if isinstance(a, sp.Order):
             continue
         elif isinstance(a, (sp.Mul, sp.Symbol, sp.Pow)):
             if add_coefficients is True:
                 coefficient = sp.symbols(f"a_{next(coefs)}")
-                outargs.append(coefficient * a)
+                outargs.append((coefficient * a).evalf())
                 syms.append(coefficient)
             else:
-                outargs.append(a)
-        # check for things like 'cos(2)' and try to turn them into numbers
+                outargs.append(a.evalf())
         elif isinstance((number := a.evalf()), sp.Number):
             outargs.append(number)
         else:

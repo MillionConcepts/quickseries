@@ -45,6 +45,11 @@ those bounds. In the example above, setting `bounds` to `(-1, 1)` provides
 the resulting approximation will get pretty bad past about +/-pi/2).
     * `quickseries()` tends to be much more effective closer to 0. You may be
       able to get more use out of it if you shift/squeeze your data towards 0.
+      This is largely due to the fact that high-order polynomials are much more
+      numerically stable with smaller input values.
+    * Functions with a pole at 0, of course -- or whose series expansions have
+      a pole at 0 -- can present an exception to this rule. It will still
+      generally be better to keep their input values small.
 * Increasing `order` will tend to make the approximation slower but more 
 precise. In the example above, increasing `order` to 14 provides ~20x 
 greater precision but makes the approximation ~20% slower.
