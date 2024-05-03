@@ -17,18 +17,6 @@ LmSig = Callable[[Any], Union[np.ndarray, float]]
 EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
 
-SIMPLE_POLY_ELEMENTS = (
-    sp.Add, sp.Mul, sp.Number, sp.Symbol, sp.Pow, sp.Integer
-)
-"""sympy classes that may appear in a 'simple' (by our standards) polynomial"""
-
-
-def is_simple_poly(expr: sp.Expr) -> bool:
-    for arg in sp.preorder_traversal(expr):
-        if not isinstance(arg, SIMPLE_POLY_ELEMENTS):
-            return False
-    return True
-
 
 def lambdify(
     func: Union[str, sp.Expr],
@@ -235,14 +223,14 @@ def quickseries(
     prefactor: Optional[bool] = None,
     approx_poly: bool = False,
     jit: bool = False,
-    bit_depth: Optional[Literal[16, 32, 64]] = None,
+    precision: Optional[Literal[16, 32, 64]] = None,
 ) -> LmSig:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
     if len(expr.free_symbols) != 1:
         raise ValueError("This function only supports univariate functions.")
     free = tuple(expr.free_symbols)[0]
-    if approx_poly is True or not is_simple_poly(expr):
+    if (approx_poly is True) or (not sp.poly_from_expr(expr)[0].is_univariate):
         x0 = x0 if x0 is not None else np.mean(bounds)
         approx, expr = series_lambda(func, x0, order, True)
         vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
@@ -260,7 +248,7 @@ def quickseries(
     expr = sp.polys.polyfuncs.horner(expr)
     polyfunc = sp.lambdify(free, expr, ("scipy", "numpy"))
     # optionally, rewrite it to precompute stray powers and force precision
-    polyfunc = rewrite(polyfunc, prefactor, bit_depth)
+    polyfunc = rewrite(polyfunc, prefactor, precision)
     # optionally, convert it to a numbafied CPUDispatcher function
     if jit is True:
         import numba
@@ -272,7 +260,7 @@ def benchmark(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     offset_resolution: int = 10000,
     timeit_cycles: int = 10000,
-    testbounds = "equal",
+    testbounds="equal",
     **quickkwargs
 ):
     lamb = lambdify(sp.sympify(func))
