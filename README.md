@@ -87,8 +87,9 @@ but instead simply attempts to rewrite it in a more efficient form.
       rewrite of the input polynomial, but with slightly worse performance and 
       precision.
 * At present, `quickseries()` only works on univariate functions that are 
-locally continuous within `bounds`. It is also not guaranteed to work well, or 
-at all, on all such functions within all intervals.
+locally analytic within `bounds`, and generally only when such functions are
+also continuous and differentiable within `bounds`. It is also not guaranteed 
+to work well, or at all, on all such functions.
 * `quickseries()` is also capable of auto-jitting the functions it generates
 with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
 install it with your preferred package manager.
