@@ -248,16 +248,20 @@ def _rewrite_precomputed(polyexpr, varname, lines):
     return polyexpr, lines
 
 
-def _clip_parameters(params, zero_one_threshold):
-    out = []
-    for param in params:
-        if abs(param) < zero_one_threshold:
-            out.append(0)
-        elif abs(1 - param) < zero_one_threshold:
-            out.append(1)
-        else:
-            out.append(param)
-    return out
+def _perform_series_fit(func, bounds, order, resolution, x0):
+    approx, expr = series_lambda(func, x0, order, True)
+    vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
+    try:
+        dep = lamb(vec)
+    except TypeError as err:
+        # this is a potentially slow but unavoidable case
+        if "converted to Python scalars" not in str(err):
+            raise
+        dep = np.array([lamb(v) for v in vec])
+    params, _ = fit(approx, 1, vec, dep)
+    # insert coefficients into polynomial
+    expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
+    return expr
 
 
 def quickseries(
@@ -271,7 +275,6 @@ def quickseries(
     jit: bool = False,
     precision: Optional[Literal[16, 32, 64]] = None,
     fit_series_expansion: bool = True,
-    zero_one_thresh: Optional[float] = None
 ) -> LmSig:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
@@ -280,21 +283,10 @@ def quickseries(
     free = tuple(expr.free_symbols)[0]
     if (approx_poly is True) or (not is_simple_poly(expr)):
         x0 = x0 if x0 is not None else np.mean(bounds)
-        approx, expr = series_lambda(func, x0, order, True)
-        vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
-        try:
-            dep = lamb(vec)
-        except TypeError as err:
-            # this is a potentially slow but unavoidable case
-            if "converted to Python scalars" not in str(err):
-                raise
-            dep = np.array([lamb(v) for v in vec])
         if fit_series_expansion is True:
-            params, _ = fit(approx, 1, vec, dep)
-            # insert coefficients into polynomial
-            if zero_one_thresh is not None:
-                params = _clip_parameters(params, zero_one_thresh)
-            expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
+            expr = _perform_series_fit(func, bounds, order, resolution, x0)
+        else:
+            _, expr = series_lambda(func, x0, order, False)
     # rewrite polynomial in horner form for fast evaluation
     expr = sp.polys.polyfuncs.horner(expr)
     polyfunc = sp.lambdify(free, expr, ("scipy", "numpy"))
