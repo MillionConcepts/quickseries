@@ -1,13 +1,17 @@
+from functools import reduce
 from inspect import getfullargspec
-from itertools import chain, count
+from itertools import chain, count, product
 import re
 import timeit
+from numbers import Number
 from typing import Any, Callable, Literal, Optional, Sequence, Union
 
 from cytoolz import groupby
 from dustgoggles.dynamic import compile_source, define, getsource
 import numpy as np
 import sympy as sp
+from dustgoggles.func import gmap
+from dustgoggles.structures import listify
 
 from quickseries.simplefit import fit
 
@@ -35,7 +39,9 @@ def lambdify(
     if isinstance(func, str):
         func = sp.sympify(func)
     # noinspection PyTypeChecker
-    return sp.lambdify(sorted(func.free_symbols), func, modules)
+    return sp.lambdify(
+        sorted(func.free_symbols, key=lambda x: str(x)), func, modules
+    )
 
 
 def series_lambda(
@@ -95,6 +101,58 @@ def series_lambda(
     expr = sum(outargs)
     # noinspection PyTypeChecker
     return sp.lambdify(syms, expr, modules), expr
+
+
+def additive_combinations(n_terms, number):
+    if n_terms == 1:
+        return [(n,) for n in range(number + 1)]
+    combinations = []  # NOTE: this is super gross-looking written as a chain
+    for j in range(number + 1):
+        combinations += [
+            (j, *t)
+            for t in additive_combinations(n_terms - 1, number - j)
+        ]
+    return combinations
+
+
+def multivariate_taylor(
+    func: Union[str, sp.Expr], order: int, point=Sequence[float]
+) -> tuple[LmSig, sp.Expr]:
+    if not isinstance(func, sp.Expr):
+        func = sp.sympify(func)
+    pointsyms = listify(func.free_symbols)
+    dimensionality = len(pointsyms)
+    argsyms = listify(
+        sp.symbols(",".join([f"x{i}" for i in range(dimensionality)]))
+    )
+    ixsyms = listify(
+        sp.symbols(",".join(f"i{i}" for i in range(dimensionality)))
+    )
+    deriv = sp.Derivative(func, *[(p, i) for p, i in zip(pointsyms, ixsyms)])
+    fact = reduce(sp.Mul, [sp.factorial(i) for i in ixsyms])
+    err = reduce(
+        sp.Mul,
+        [(x - a) ** i for x, a, i in zip(argsyms, pointsyms, ixsyms)]
+    )
+    taylor = deriv / fact * err
+    decomp = additive_combinations(dimensionality, order)
+    # substitutions = [
+    #     {
+    #         **{i: d for i, d in zip(ixsyms, d)},
+    #         **{a: d for a, d in zip(pointsyms, d)},
+    #         **{x: d for x, d in zip(argsyms, d)}
+    #     }
+    #     for d in decomp
+    # ]
+    built = reduce(
+        sp.Add,
+        (taylor.subs({i: d for i, d in zip(ixsyms, d)}) for d in decomp)
+    ).doit()
+    evaluated = built.subs({s: p for s, p in zip(pointsyms, point)}).evalf()
+    # this next line is kind of aesthetic -- we just want the argument names
+    # to come out consistent
+    evaluated = evaluated.subs({a: p for a, p in zip(argsyms, pointsyms)})
+    return sp.lambdify(pointsyms, evaluated), evaluated
 
 
 def lastline(func: Callable) -> str:
@@ -209,15 +267,15 @@ def rewrite(
 ) -> LmSig:
     if precompute is False and precision is None:
         return poly_lambda
-    # name of single argument to the lambdified function
-    varname = getfullargspec(poly_lambda).args[0]
-    lines = [f"def _lambdifygenerated({varname}):"]
+    # name of arguments to the lambdified function
+    free = getfullargspec(poly_lambda).args
+    lines = [f"def _lambdifygenerated({', '.join(free)}):"]
     # sympy will always place this on a single line; it includes
     # the Python expression form of the hornerized polynomial
     # and a return statement; lastline() strips it
     polyexpr = lastline(poly_lambda)
     if precompute is True:
-        polyexpr, lines = _rewrite_precomputed(polyexpr, varname, lines)
+        polyexpr, lines = _rewrite_precomputed(polyexpr, free, lines)
     if precision is not None:
         polyexpr = force_line_precision(polyexpr, precision)
     lines.append(f"    return {polyexpr}")
@@ -227,28 +285,31 @@ def rewrite(
     return opt
 
 
-def _rewrite_precomputed(polyexpr, varname, lines):
+def _rewrite_precomputed(polyexpr, free, lines):
     # replacements: what factors we will decompose each factor into
-    # variables: which factors we will define as variables, and their
+    # free: which factors we will define as variables, and their
     # "building blocks"
-    replacements, variables = optimize_exponents(regexponents(polyexpr))
-    for k, v in variables.items():
-        multiplicands = []
-        for power in v:
-            if power == 1:
-                multiplicands.append(varname)
-            else:
-                multiplicands.append(f"{varname}{power}")
-        lines.append(f"    {varname}{k} = {'*'.join(multiplicands)}")
-    for k, v in replacements.items():
-        substitution = '*'.join(
-            [f"{varname}{r}" if r != 1 else varname for r in v]
+    for f in free:
+        expat = re.compile(rf"{f}+ ?\*\* ?(\d+)")
+        replacements, variables = optimize_exponents(
+            gmap(int, expat.findall(polyexpr))
         )
-        polyexpr = polyexpr.replace(f"{varname}**{k}", substitution)
+        for k, v in variables.items():
+            multiplicands = []
+            for power in v:
+                if power == 1:
+                    multiplicands.append(f)
+                else:
+                    multiplicands.append(f"{f}{power}")
+            lines.append(f"    {f}{k} = {'*'.join(multiplicands)}")
+        for k, v in replacements.items():
+            substitution = '*'.join([f"{f}{r}" if r != 1 else f for r in v])
+            polyexpr = polyexpr.replace(f"{f}**{k}", substitution)
     return polyexpr, lines
 
 
 def _perform_series_fit(func, bounds, order, resolution, x0):
+    x0, bounds = x0[0], bounds[0]    # TODO: TEMP, REMOVE FOR MULTI
     approx, expr = series_lambda(func, x0, order, True)
     vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
     try:
@@ -278,11 +339,13 @@ def quickseries(
 ) -> LmSig:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
-    if len(expr.free_symbols) != 1:
-        raise ValueError("This function only supports univariate functions.")
-    free = tuple(expr.free_symbols)[0]
-    if (approx_poly is True) or (not is_simple_poly(expr)):
-        x0 = x0 if x0 is not None else np.mean(bounds)
+    if len(expr.free_symbols) == 0:
+        raise ValueError("func must have at least one free variable.")
+    free = tuple(expr.free_symbols)
+    bounds, x0 = _makebounds(bounds, len(free), x0)
+    if len(free) > 1:
+        approx, expr = multivariate_taylor(func, order, x0)
+    elif (approx_poly is True) or (not is_simple_poly(expr)):
         if fit_series_expansion is True:
             expr = _perform_series_fit(func, bounds, order, resolution, x0)
         else:
@@ -299,9 +362,27 @@ def quickseries(
     return polyfunc
 
 
+def _makebounds(bounds, n_free, x0):
+    bounds = (-1, 1) if bounds is None else bounds
+    if not isinstance(bounds[0], (list, tuple)):
+        bounds = [bounds for _ in range(n_free)]
+    if x0 is None:
+        x0 = [np.mean(b) for b in bounds]
+    elif not isinstance(x0, (list, tuple)):
+        x0 = [x0 for _ in bounds]
+    return bounds, x0
+
+
+def _pvec(bounds, offset_resolution):
+    axes = [np.linspace(*b, offset_resolution) for b in bounds]
+    indices = map(np.ravel, np.indices([offset_resolution for _ in bounds]))
+    return [j[i] for j, i in zip(axes, indices)]
+
+
 def benchmark(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     offset_resolution: int = 10000,
+    n_offset_shuffles: int = 50,
     timeit_cycles: int = 10000,
     testbounds="equal",
     **quickkwargs
@@ -309,22 +390,78 @@ def benchmark(
     lamb = lambdify(sp.sympify(func))
     quick = quickseries(func, **quickkwargs)
     if testbounds == "equal":
-        testbounds = quickkwargs.get("bounds", (-1, 1))
-    x_ax = np.linspace(*testbounds,  offset_resolution)
+        testbounds, _ = _makebounds(
+            quickkwargs.get("bounds"), len(getfullargspec(quick).args), None
+        )
+    vecs = [np.linspace(*b, offset_resolution) for b in testbounds]
+    if (pre := quickkwargs.get("precision")) is not None:
+        vecs = gmap(
+            lambda arr: arr.astype(getattr(np, f"float{pre}")), vecs
+        )
+    if len(testbounds) > 1:
+        # always check the extrema of the bounds
+        extrema = [[] for _ in vecs]
+        for p in product((-1, 1), repeat=len(vecs)):
+            for i, side in enumerate(p):
+                extrema[i].append(vecs[i][side])
+        extrema = [np.array(e) for e in extrema]
+        absdiff, _, __, frange, worstpoint = _offset_check_cycle(
+            0, (np.inf, -np.inf), lamb, quick, extrema, None
+        )
+        medians, stds = [], []
+        for _ in range(n_offset_shuffles):
+            gmap(np.random.shuffle, vecs)
+            absdiff, mediff, stdiff, frange, worstpoint = _offset_check_cycle(
+                absdiff, frange, lamb, quick, vecs, worstpoint
+            )
+            medians.append(mediff)
+            stds.append(stdiff)
+        mediff, stdiff = np.median(medians), np.median(stds)
+    # no point in shuffling for 1D -- we're doing that for > 1D
+    # because it becomes quickly unreasonable in terms of memory
+    # to be exhaustive, but this _is_ exhaustive for 1D
+    else:
+        approx_y, orig_y = quick(*vecs), lamb(*vecs)
+        frange = (orig_y.min(), orig_y.max())
+        offset = abs(approx_y - orig_y)
+        worstix = np.argmax(offset)
+        absdiff = offset[worstix]
+        mediff = np.median(offset)
+        stdiff = np.std(offset)
+        worstpoint = [vecs[0][worstix]]
+        del offset, orig_y, approx_y
     # TODO: should probably permit specifying dtype for jitted
     #  functions -- both here and in primary quickseries().
-    approx_y, orig_y = quick(x_ax), lamb(x_ax)
-    approx_time = timeit.timeit(lambda: quick(x_ax), number=timeit_cycles)
-    orig_time = timeit.timeit(lambda: lamb(x_ax), number=timeit_cycles)
-    funcrange = min(orig_y), max(orig_y)
-    absdiff = max(abs(approx_y - orig_y))
+    approx_time = timeit.timeit(lambda: quick(*vecs), number=timeit_cycles)
+    orig_time = timeit.timeit(lambda: lamb(*vecs), number=timeit_cycles)
     orig_s = orig_time / timeit_cycles
     approx_s = approx_time / timeit_cycles
     return {
         'absdiff': absdiff,
-        'reldiff': absdiff / (funcrange[1] - funcrange[0]),
-        'range': funcrange,
+        'reldiff': absdiff / np.ptp(frange),
+        'mediff': mediff,
+        'stdiff': stdiff,
+        'worstpoint': worstpoint,
+        'range': frange,
         'orig_s': orig_s, 
         'approx_s': approx_s,
         'timeratio': approx_s / orig_s
     }
+
+
+def _offset_check_cycle(
+    absdiff,
+    frange,
+    lamb,
+    quick,
+    vecs,
+    worstpoint,
+):
+    approx_y, orig_y = quick(*vecs), lamb(*vecs)
+    frange = (min(orig_y.min(), frange[0]), max(orig_y.max(), frange[1]))
+    offset = abs(approx_y - orig_y)
+    worstix = np.argmax(offset)
+    if (new_absdiff := offset[worstix]) > absdiff:
+        absdiff = new_absdiff
+        worstpoint = [v[worstix] for v in vecs]
+    return absdiff, np.median(offset), np.std(offset), frange, worstpoint
