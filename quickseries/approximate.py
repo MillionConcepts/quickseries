@@ -18,10 +18,20 @@ EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
 
 
+def is_simple_poly(expr: sp.Expr) -> bool:
+    gens = sp.poly_from_expr(expr)[1]['gens']
+    return len(gens) == 1 and isinstance(gens[0], sp.Symbol)
+
+
 def lambdify(
     func: Union[str, sp.Expr],
     modules: Union[str, Sequence[str]] = ("scipy", "numpy")
 ) -> LmSig:
+    """
+    Transform a sympy Expr or a string representation of a function into a
+    callable with enforced argument order, incorporating code from specified
+    modules.
+    """
     if isinstance(func, str):
         func = sp.sympify(func)
     # noinspection PyTypeChecker
@@ -33,8 +43,28 @@ def series_lambda(
     x0: float = 0,
     order: int = 9,
     add_coefficients: bool = False,
-    module: str = "numpy",
+    modules: Union[str, Sequence[str]] = ("scipy", "numpy")
 ) -> tuple[LmSig, sp.Expr]:
+    """
+    Construct a power expansion of a sympy Expr or the string expression of a
+    function; optionally, add free coefficients to the terms of the resulting
+    polynomial to permit optimization by downstream functions.
+
+    Args:
+        func: Mathematical function to expand, expressed as a string or a
+            sympy Expr.
+        x0: Point about which to expand func.
+        order: Order of power expansion.
+        add_coefficients: If True, add additional arguments/symbols to the
+            returned function and Expr corresponding to the polynomial's
+            coefficients.
+        modules: Modules from which to draw the building blocks of the
+            returned function.
+
+    Returns:
+        approximant: Python function that implements the power expansion.
+        expr: sympy Expr used to construct approximant.
+    """
     func = sp.sympify(func) if isinstance(func, str) else func
     # limiting precision of x0 is necessary due to a bug in sp.series
     series = sp.series(func, x0=round(x0, 6), n=order)
@@ -64,7 +94,7 @@ def series_lambda(
             )
     expr = sum(outargs)
     # noinspection PyTypeChecker
-    return sp.lambdify(syms, expr, module), expr
+    return sp.lambdify(syms, expr, modules), expr
 
 
 def lastline(func: Callable) -> str:
@@ -150,7 +180,8 @@ def optimize_exponents(
 
 
 def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
-    constructor = f"numpy.float{precision}"
+    constructor_rep = f"numpy.float{precision}"
+    constructor = getattr(np, f"float{precision}")
     last, out = 0, ""
     for match in re.finditer(
         r"([+* (-]+)([\d.]+)(e[+\-]?\d+)?.*?([+* )]|$)", line
@@ -160,7 +191,10 @@ def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
         if match.group(1) == "**":
             out += line[slice(*match.span())]
         else:
-            out += f"{match.group(1)}{constructor}({match.group(2)}"
+            # NOTE: casting number to string within the f-string statement
+            # appears to upcast it before generating the representation.
+            number = str(constructor(float(match.group(2))))
+            out += f"{match.group(1)}{constructor_rep}({number}"
             if match.group(3) is not None:  # scientific notation
                 out += match.group(3)
             out += f"){match.group(4)}"
@@ -214,6 +248,18 @@ def _rewrite_precomputed(polyexpr, varname, lines):
     return polyexpr, lines
 
 
+def _clip_parameters(params, zero_one_threshold):
+    out = []
+    for param in params:
+        if abs(param) < zero_one_threshold:
+            out.append(0)
+        elif abs(1 - param) < zero_one_threshold:
+            out.append(1)
+        else:
+            out.append(param)
+    return out
+
+
 def quickseries(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     bounds: tuple[float, float] = (-1, 1),
@@ -224,13 +270,15 @@ def quickseries(
     approx_poly: bool = False,
     jit: bool = False,
     precision: Optional[Literal[16, 32, 64]] = None,
+    fit_series_expansion: bool = True,
+    zero_one_thresh: Optional[float] = None
 ) -> LmSig:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
     if len(expr.free_symbols) != 1:
         raise ValueError("This function only supports univariate functions.")
     free = tuple(expr.free_symbols)[0]
-    if (approx_poly is True) or (not sp.poly_from_expr(expr)[0].is_univariate):
+    if (approx_poly is True) or (not is_simple_poly(expr)):
         x0 = x0 if x0 is not None else np.mean(bounds)
         approx, expr = series_lambda(func, x0, order, True)
         vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
@@ -241,9 +289,12 @@ def quickseries(
             if "converted to Python scalars" not in str(err):
                 raise
             dep = np.array([lamb(v) for v in vec])
-        params, _ = fit(approx, 1, vec, dep)
-        # insert coefficients into polynomial
-        expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
+        if fit_series_expansion is True:
+            params, _ = fit(approx, 1, vec, dep)
+            # insert coefficients into polynomial
+            if zero_one_thresh is not None:
+                params = _clip_parameters(params, zero_one_thresh)
+            expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
     # rewrite polynomial in horner form for fast evaluation
     expr = sp.polys.polyfuncs.horner(expr)
     polyfunc = sp.lambdify(free, expr, ("scipy", "numpy"))
