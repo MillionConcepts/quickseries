@@ -44,6 +44,30 @@ def lambdify(
     )
 
 
+def _rectify_series(series, add_coefficients):
+    outargs, coefsyms = [], []
+    for a in series.args:
+        # NOTE: the Expr.evalf() calls are simply to try to evaluate
+        #  anything we can.
+        if isinstance(a, sp.Order):
+            continue
+        elif isinstance(a, (sp.Mul, sp.Symbol, sp.Pow)):
+            if add_coefficients is True:
+                coefficient = sp.symbols(f"a_{len(coefsyms)}")
+                outargs.append((coefficient * a).evalf())
+                coefsyms.append(coefficient)
+            else:
+                outargs.append(a.evalf())
+        elif isinstance((number := a.evalf()), sp.Number):
+            outargs.append(number)
+        else:
+            raise ValueError(
+                f"don't know how to handle expression element {a} of "
+                f"type({type(a)})"
+            )
+    return sum(outargs), coefsyms
+
+
 def series_lambda(
     func: Union[str, sp.Expr],
     x0: float = 0,
@@ -75,32 +99,12 @@ def series_lambda(
     # limiting precision of x0 is necessary due to a bug in sp.series
     series = sp.series(func, x0=round(x0, 6), n=order)
     # noinspection PyTypeChecker
-    args, syms = series.args, sorted(func.free_symbols)
     # remove Order (limit behavior) terms, try to split constants from
     # polynomial terms
-    outargs, coefs = [], count()
-    for a in args:
-        # NOTE: the Expr.evalf() calls are simply to try to evaluate
-        #  anything we can.
-        if isinstance(a, sp.Order):
-            continue
-        elif isinstance(a, (sp.Mul, sp.Symbol, sp.Pow)):
-            if add_coefficients is True:
-                coefficient = sp.symbols(f"a_{next(coefs)}")
-                outargs.append((coefficient * a).evalf())
-                syms.append(coefficient)
-            else:
-                outargs.append(a.evalf())
-        elif isinstance((number := a.evalf()), sp.Number):
-            outargs.append(number)
-        else:
-            raise ValueError(
-                f"don't know how to handle expression element {a} of "
-                f"type({type(a)})"
-            )
-    expr = sum(outargs)
+    expr, coefsyms = _rectify_series(series, add_coefficients)
+    syms = sorted(func.free_symbols, key=lambda x: str(x))
     # noinspection PyTypeChecker
-    return sp.lambdify(syms, expr, modules), expr
+    return sp.lambdify(syms + coefsyms, expr, modules), expr
 
 
 def additive_combinations(n_terms, number):
@@ -116,7 +120,10 @@ def additive_combinations(n_terms, number):
 
 
 def multivariate_taylor(
-    func: Union[str, sp.Expr], order: int, point=Sequence[float]
+    func: Union[str, sp.Expr],
+    point: Sequence[float],
+    order: int,
+    add_coefficients: bool = False
 ) -> tuple[LmSig, sp.Expr]:
     if not isinstance(func, sp.Expr):
         func = sp.sympify(func)
@@ -136,23 +143,16 @@ def multivariate_taylor(
     )
     taylor = deriv / fact * err
     decomp = additive_combinations(dimensionality, order)
-    # substitutions = [
-    #     {
-    #         **{i: d for i, d in zip(ixsyms, d)},
-    #         **{a: d for a, d in zip(pointsyms, d)},
-    #         **{x: d for x, d in zip(argsyms, d)}
-    #     }
-    #     for d in decomp
-    # ]
     built = reduce(
         sp.Add,
         (taylor.subs({i: d for i, d in zip(ixsyms, d)}) for d in decomp)
     ).doit()
     evaluated = built.subs({s: p for s, p in zip(pointsyms, point)}).evalf()
     # this next line is kind of aesthetic -- we just want the argument names
-    # to come out consistent
+    # to be consistent with the input
     evaluated = evaluated.subs({a: p for a, p in zip(argsyms, pointsyms)})
-    return sp.lambdify(pointsyms, evaluated), evaluated
+    evaluated, coefsyms = _rectify_series(evaluated, add_coefficients)
+    return sp.lambdify(pointsyms + coefsyms, evaluated), evaluated
 
 
 def lastline(func: Callable) -> str:
@@ -308,18 +308,26 @@ def _rewrite_precomputed(polyexpr, free, lines):
     return polyexpr, lines
 
 
+def _pvec(bounds, offset_resolution):
+    axes = [np.linspace(*b, offset_resolution) for b in bounds]
+    indices = map(np.ravel, np.indices([offset_resolution for _ in bounds]))
+    return [j[i] for j, i in zip(axes, indices)]
+
+
 def _perform_series_fit(func, bounds, order, resolution, x0):
-    x0, bounds = x0[0], bounds[0]    # TODO: TEMP, REMOVE FOR MULTI
-    approx, expr = series_lambda(func, x0, order, True)
-    vec, lamb = np.linspace(*bounds, resolution), lambdify(func)
+    if len(bounds) == 1:
+        approx, expr = series_lambda(func, x0[0], order, True)
+    else:
+        approx, expr = multivariate_taylor(func, x0, order, True)
+    lamb, vec = lambdify(func), _pvec(bounds, resolution)
     try:
-        dep = lamb(vec)
+        dep = lamb(*vec)
     except TypeError as err:
         # this is a potentially slow but unavoidable case
         if "converted to Python scalars" not in str(err):
             raise
         dep = np.array([lamb(v) for v in vec])
-    params, _ = fit(approx, 1, vec, dep)
+    params, _ = fit(approx, len(bounds), vec, dep)
     # insert coefficients into polynomial
     expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
     return expr
@@ -329,7 +337,7 @@ def quickseries(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     bounds: tuple[float, float] = (-1, 1),
     order: int = 9,
-    x0: Optional[float] = None,
+    point: Optional[float] = None,
     resolution: int = 100,
     prefactor: Optional[bool] = None,
     approx_poly: bool = False,
@@ -342,14 +350,14 @@ def quickseries(
     if len(expr.free_symbols) == 0:
         raise ValueError("func must have at least one free variable.")
     free = tuple(expr.free_symbols)
-    bounds, x0 = _makebounds(bounds, len(free), x0)
-    if len(free) > 1:
-        approx, expr = multivariate_taylor(func, order, x0)
-    elif (approx_poly is True) or (not is_simple_poly(expr)):
+    bounds, point = _makebounds(bounds, len(free), point)
+    if (approx_poly is True) or (not is_simple_poly(expr)):
         if fit_series_expansion is True:
-            expr = _perform_series_fit(func, bounds, order, resolution, x0)
+            expr = _perform_series_fit(func, bounds, order, resolution, point)
+        elif len(free) > 1:
+            approx, expr = multivariate_taylor(func, point, order, False)
         else:
-            _, expr = series_lambda(func, x0, order, False)
+            _, expr = series_lambda(func, point[0], order, False)
     # rewrite polynomial in horner form for fast evaluation
     expr = sp.polys.polyfuncs.horner(expr)
     polyfunc = sp.lambdify(free, expr, ("scipy", "numpy"))
@@ -373,12 +381,6 @@ def _makebounds(bounds, n_free, x0):
     return bounds, x0
 
 
-def _pvec(bounds, offset_resolution):
-    axes = [np.linspace(*b, offset_resolution) for b in bounds]
-    indices = map(np.ravel, np.indices([offset_resolution for _ in bounds]))
-    return [j[i] for j, i in zip(axes, indices)]
-
-
 def benchmark(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     offset_resolution: int = 10000,
@@ -391,7 +393,7 @@ def benchmark(
     quick = quickseries(func, **quickkwargs)
     if testbounds == "equal":
         testbounds, _ = _makebounds(
-            quickkwargs.get("bounds"), len(getfullargspec(quick).args), None
+            quickkwargs.get("bounds"), len(getfullargspec(lamb).args), None
         )
     vecs = [np.linspace(*b, offset_resolution) for b in testbounds]
     if (pre := quickkwargs.get("precision")) is not None:
@@ -445,7 +447,8 @@ def benchmark(
         'range': frange,
         'orig_s': orig_s, 
         'approx_s': approx_s,
-        'timeratio': approx_s / orig_s
+        'timeratio': approx_s / orig_s,
+        'quick': quick
     }
 
 

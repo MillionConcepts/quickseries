@@ -29,7 +29,7 @@ def fit_wrap(func, dimensionality, fit_parameters):
 def fit(
     func: Callable,
     dimensionality: int,
-    points: np.ndarray,
+    points: list[np.ndarray],
     dependent_variable: np.ndarray,
     guess: Optional[Sequence[float]] = None,
 ):
@@ -44,15 +44,12 @@ def fit(
         if ix >= dimensionality
     ]
     # TODO: check dim of dependent
-    if len(points.shape) > 2:
-        raise ValueError("points must be 1- or 2-dimensional")
-    pointsdim = 1 if len(points.shape) == 1 else points.shape[0]
-    if pointsdim != dimensionality:
+    if not all(p.ndim == 1 for p in points):
+        raise ValueError("each input vector must be 1-dimensional")
+    if len(points) != dimensionality:
         raise ValueError(
-            "points shape does not match number of non-free parameters"
+            "number of input vectors does not match non-free parameters"
         )
-    if len(points.shape) == 1:
-        points = np.expand_dims(points, 0)
     # TODO: optional goodness-of-fit evaluation
     return curve_fit(
         fit_wrap(func, dimensionality, fit_parameters),
