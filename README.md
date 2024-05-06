@@ -42,9 +42,25 @@ approx runtime:
   objects such as pandas `Series` or numpy `ndarrays`) and return a single 
   floating-point value (or a 1-D floating-point array if passed arraylike 
   arguments).
-* `quickseries` only works on functions that are continuous and infinitely 
-  differentiable within the domain of interest. Specifically, they must not 
-  have singularities or discontinuities at `point` or within `bounds`.
+* `quickseries` only works consistently on functions that are continuous and 
+  infinitely differentiable within the domain of interest. Specifically, they
+  should not have singularities, discontinuities, or infinite / undefined 
+  values at `point` or within `bounds`. Failure cases differ:
+  * `quickseries` will always fail on functions that are infinite/undefined 
+    at `point`, like `quickseries("ln(x)", point=-1)`.
+  * It will almost always fail on functions with a largeish interval of 
+    infinite/undefined values within `bounds`, such as
+    `quickseries("gamma(x)", bounds=(-1.1, 0), point=-0.5)`.
+  * It will usually succeed but produce bad results on functions with 
+    singularities or point discontinuities within `bounds` or 
+    near `point` but not at `point`, such as `quickseries("tan(x)", bounds=(1, 2))`.
+  * It will often succeed, but usually produce bad results, on univariate 
+    functions that are continuous but not differentiable at `point`, such as 
+    `quickseries("abs(sin(x))", point=0)`. It will always fail on multivariate 
+    functions of this kind.
+* Functions given to `quickseries` must be expressed in strict closed form 
+  and include only finite terms. They cannot contain limits, integrals, 
+  derivatives, summations, continued fractions, etc.  
 * `quickseries` is not guaranteed to work for all such functions.
 
 ## tips
