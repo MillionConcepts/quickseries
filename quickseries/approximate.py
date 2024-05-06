@@ -1,5 +1,5 @@
 from functools import reduce
-from inspect import getfullargspec
+from inspect import getfullargspec, signature
 from itertools import chain, count, product
 import re
 import timeit
@@ -314,20 +314,28 @@ def _pvec(bounds, offset_resolution):
     return [j[i] for j, i in zip(axes, indices)]
 
 
-def _perform_series_fit(func, bounds, order, resolution, x0):
+def _perform_series_fit(func, bounds, order, resolution, x0, apply_bounds):
     if len(bounds) == 1:
         approx, expr = series_lambda(func, x0[0], order, True)
     else:
         approx, expr = multivariate_taylor(func, x0, order, True)
-    lamb, vec = lambdify(func), _pvec(bounds, resolution)
+    lamb, vecs = lambdify(func), _pvec(bounds, resolution)
     try:
-        dep = lamb(*vec)
+        dep = lamb(*vecs)
     except TypeError as err:
         # this is a potentially slow but unavoidable case
         if "converted to Python scalars" not in str(err):
             raise
-        dep = np.array([lamb(v) for v in vec])
-    params, _ = fit(approx, len(bounds), vec, dep)
+        dep = np.array([lamb(v) for v in vecs])
+    kw = {}
+    if apply_bounds is True:
+        kw['bounds'] = (-5, 5)
+    guess = [
+        1 for _ in range(len(signature(approx).parameters) - len(vecs))
+    ]
+    params, _ = fit(
+        func=approx, vecs=vecs, dependent_variable=dep, guess=guess, **kw
+    )
     # insert coefficients into polynomial
     expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
     return expr
@@ -344,6 +352,7 @@ def quickseries(
     jit: bool = False,
     precision: Optional[Literal[16, 32, 64]] = None,
     fit_series_expansion: bool = True,
+    bound_series_fit: bool = False
 ) -> LmSig:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
@@ -353,7 +362,9 @@ def quickseries(
     bounds, point = _makebounds(bounds, len(free), point)
     if (approx_poly is True) or (not is_simple_poly(expr)):
         if fit_series_expansion is True:
-            expr = _perform_series_fit(func, bounds, order, resolution, point)
+            expr = _perform_series_fit(
+                func, bounds, order, resolution, point, bound_series_fit
+            )
         elif len(free) > 1:
             approx, expr = multivariate_taylor(func, point, order, False)
         else:

@@ -28,33 +28,33 @@ def fit_wrap(func, dimensionality, fit_parameters):
 
 def fit(
     func: Callable,
-    dimensionality: int,
-    points: list[np.ndarray],
+    vecs: list[np.ndarray],
     dependent_variable: np.ndarray,
     guess: Optional[Sequence[float]] = None,
+    bounds: Optional[
+        Union[tuple[tuple[float, float]], tuple[float, float]]
+    ] = None
 ):
     sig = signature(func)
-    assert dimensionality < len(sig.parameters), (
+    assert len(vecs) < len(sig.parameters), (
         "The model function must have at least one 'free' "
         "parameter to be a meaningful candidate for fitting."
     )
     fit_parameters = [
         item
         for ix, item in enumerate(sig.parameters.values())
-        if ix >= dimensionality
+        if ix >= len(vecs)
     ]
     # TODO: check dim of dependent
-    if not all(p.ndim == 1 for p in points):
+    if not all(p.ndim == 1 for p in vecs):
         raise ValueError("each input vector must be 1-dimensional")
-    if len(points) != dimensionality:
-        raise ValueError(
-            "number of input vectors does not match non-free parameters"
-        )
     # TODO: optional goodness-of-fit evaluation
+    kw = {'bounds': bounds} if bounds is not None else {}
     return curve_fit(
-        fit_wrap(func, dimensionality, fit_parameters),
-        points,
+        fit_wrap(func, len(vecs), fit_parameters),
+        vecs,
         dependent_variable,
         maxfev=20000,
         p0=guess,
+        **kw
     )
