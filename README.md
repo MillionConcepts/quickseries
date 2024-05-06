@@ -65,7 +65,7 @@ the resulting approximation will get pretty bad past about +/-pi/2).
       a pole at 0 -- can present an exception to this rule. It will still
       generally be better to keep their input values small.
 * Increasing `order` will tend to make the approximation slower but more 
-precise. In the example above, increasing `order` to 14 provides ~20x 
+accurate. In the example above, increasing `order` to 14 provides ~20x 
 greater accuracy but makes the approximation ~20% slower.
   * This tends to have diminishing returns. In the example above, increasing 
   `order` to 30 provides no meaningful increase in accuracy over `order=14`, 
