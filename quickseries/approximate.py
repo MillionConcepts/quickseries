@@ -416,9 +416,7 @@ def _offset_check_cycle(
     if (new_absdiff := offset[worstix]) > absdiff:
         absdiff = new_absdiff
         worstpoint = [v[worstix] for v in vecs]
-    if absdiff > 0.01:
-        raise ValueError
-    return absdiff, np.median(offset), np.std(offset), frange, worstpoint
+    return absdiff, np.median(offset), np.mean(offset ** 2), frange, worstpoint
 
 
 def benchmark(
@@ -450,15 +448,15 @@ def benchmark(
         absdiff, _, __, frange, worstpoint = _offset_check_cycle(
             0, (np.inf, -np.inf), lamb, quick, extrema, None
         )
-        medians, stds = [], []
+        medians, mses = [], []
         for _ in range(n_offset_shuffles):
             gmap(np.random.shuffle, vecs)
-            absdiff, mediff, stdiff, frange, worstpoint = _offset_check_cycle(
+            absdiff, mediff, mse, frange, worstpoint = _offset_check_cycle(
                 absdiff, frange, lamb, quick, vecs, worstpoint
             )
             medians.append(mediff)
-            stds.append(stdiff)
-        mediff, stdiff = np.median(medians), np.median(stds)
+            mses.append(mse)
+        mediff, mse = np.median(medians), np.median(mses)
     # no point in shuffling for 1D -- we're doing that for > 1D
     # because it becomes quickly unreasonable in terms of memory
     # to be exhaustive, but this _is_ exhaustive for 1D
@@ -469,7 +467,7 @@ def benchmark(
         worstix = np.argmax(offset)
         absdiff = offset[worstix]
         mediff = np.median(offset)
-        stdiff = np.std(offset)
+        mse = np.mean(offset ** 2)
         worstpoint = [vecs[0][worstix]]
         del offset, orig_y, approx_y
     # TODO: should probably permit specifying dtype for jitted
@@ -482,7 +480,7 @@ def benchmark(
         'absdiff': absdiff,
         'reldiff': absdiff / np.ptp(frange),
         'mediff': mediff,
-        'stdiff': stdiff,
+        'mse': mse,
         'worstpoint': worstpoint,
         'range': frange,
         'orig_s': orig_s,
