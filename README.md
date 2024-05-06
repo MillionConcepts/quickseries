@@ -109,10 +109,11 @@ but instead simply attempts to rewrite it in a more efficient form.
     * If you want `quickseries()` to actually create an approximation of a 
     simple polynomial, pass `approx_poly=True`.
       * When approximating a polynomial, there is generally no good reason to 
-      set `order` > that polynomial's order. If you do, the function 
+      set `order` >= that polynomial's order. If you do, the function 
       `quickseries()` generates will typically be very similar to a simple 
       rewrite of the input polynomial, but with slightly worse performance and 
       accuracy.
+      * `point=0` often produces boring results for polynomial approximation.
 * `quickseries()` is also capable of auto-jitting the functions it generates
 with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
 install it with your preferred package manager.
