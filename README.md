@@ -64,13 +64,13 @@ the resulting approximation will get pretty bad past about +/-pi/2).
     * Functions with a pole at 0, of course -- or whose series expansions have
       a pole at 0 -- can present an exception to this rule. It will still
       generally be better to keep their input values small.
-* Increasing `order` will tend to make the approximation slower but more 
-accurate. In the example above, increasing `order` to 14 provides ~20x 
+* Increasing `nterms` will tend to make the approximation slower but more 
+accurate. In the example above, increasing `nterms` to 14 provides ~20x 
 greater accuracy but makes the approximation ~20% slower.
   * This tends to have diminishing returns. In the example above, increasing 
-  `order` to 30 provides no meaningful increase in accuracy over `order=14`, 
+  `nterms` to 30 provides no meaningful increase in accuracy over `order=14`, 
   but makes the approximation *slower* than `np.sin(x) * np.cos(x)`.
-  * Setting `order` too high can also cause the approximation algorithm to
+  * Setting `nterms` too high can also cause the approximation algorithm to
   fail entirely.
   * The location of accuracy/performance "sweet spots" in the parameter space 
   depends on the function and the approximation bounds. If you want to 
@@ -99,7 +99,7 @@ space/memory-efficient even if they are more time/compute-efficient.
 * By default, if you pass a simple polynomial expression to `quickseries()`
 (e.g. `"x**4 + 2 * x**3"`), it does not actually generate an approximation, 
 but instead simply attempts to rewrite it in a more efficient form.
-    * `order`, `bounds`, and `point` are ignored in this "rewrite" mode.
+    * `nterms`, `bounds`, and `point` are ignored in this "rewrite" mode.
     * This type of `quickseries()`-generated function should produce the same 
     results as any other Python function that straightforwardly implements a
     form of the input polynomial (down to floating-point error).
@@ -109,7 +109,7 @@ but instead simply attempts to rewrite it in a more efficient form.
     * If you want `quickseries()` to actually create an approximation of a 
     simple polynomial, pass `approx_poly=True`.
       * When approximating a polynomial, there is generally no good reason to 
-      set `order` >= that polynomial's order. If you do, the function 
+      set `nterms` > that polynomial's order. If you do, the function 
       `quickseries()` generates will typically be very similar to a simple 
       rewrite of the input polynomial, but with slightly worse performance and 
       accuracy.

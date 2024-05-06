@@ -79,7 +79,7 @@ def _rectify_series(series, add_coefficients):
 def series_lambda(
     func: Union[str, sp.Expr],
     x0: float = 0,
-    order: int = 9,
+    nterms: int = 9,
     add_coefficients: bool = False,
     modules: Union[str, Sequence[str]] = ("scipy", "numpy")
 ) -> tuple[LmSig, sp.Expr]:
@@ -92,7 +92,7 @@ def series_lambda(
         func: Mathematical function to expand, expressed as a string or a
             sympy Expr.
         x0: Point about which to expand func.
-        order: Order of power expansion.
+        nterms: Order of power expansion.
         add_coefficients: If True, add additional arguments/symbols to the
             returned function and Expr corresponding to the polynomial's
             coefficients.
@@ -105,7 +105,7 @@ def series_lambda(
     """
     func = sp.sympify(func) if isinstance(func, str) else func
     # limiting precision of x0 is necessary due to a bug in sp.series
-    series = sp.series(func, x0=round(x0, 6), n=order)
+    series = sp.series(func, x0=round(x0, 6), n=nterms)
     # noinspection PyTypeChecker
     # remove Order (limit behavior) terms, try to split constants from
     # polynomial terms
@@ -130,7 +130,7 @@ def additive_combinations(n_terms, number):
 def multivariate_taylor(
     func: Union[str, sp.Expr],
     point: Sequence[float],
-    order: int,
+    nterms: int,
     add_coefficients: bool = False
 ) -> tuple[LmSig, sp.Expr]:
     if not isinstance(func, sp.Expr):
@@ -150,7 +150,7 @@ def multivariate_taylor(
         [(x - a) ** i for x, a, i in zip(argsyms, pointsyms, ixsyms)]
     )
     taylor = deriv / fact * err
-    decomp = additive_combinations(dimensionality, order)
+    decomp = additive_combinations(dimensionality, nterms - 1)
     built = reduce(
         sp.Add,
         (taylor.subs({i: d for i, d in zip(ixsyms, d)}) for d in decomp)
@@ -326,12 +326,12 @@ def _pvec(bounds, offset_resolution):
 
 
 def _perform_series_fit(
-    func, bounds, order, fitres, point, apply_bounds, is_poly
+    func, bounds, nterms, fitres, point, apply_bounds, is_poly
 ):
-    if (len(bounds) == 1) or (is_poly is True):
-        approx, expr = series_lambda(func, point[0], order, True)
+    if (len(bounds) == 1) and (is_poly is False):
+        approx, expr = series_lambda(func, point[0], nterms, True)
     else:
-        approx, expr = multivariate_taylor(func, point, order, True)
+        approx, expr = multivariate_taylor(func, point, nterms, True)
     lamb, vecs = lambdify(func), _pvec(bounds, fitres)
     try:
         dep = lamb(*vecs)
@@ -358,7 +358,7 @@ def _perform_series_fit(
 def quickseries(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     bounds: tuple[float, float] = (-1, 1),
-    order: int = 9,
+    nterms: int = 9,
     point: Optional[float] = None,
     fitres: int = 100,
     prefactor: Optional[bool] = None,
@@ -379,12 +379,12 @@ def quickseries(
     if (approx_poly is True) or (is_poly is False):
         if fit_series_expansion is True:
             expr, ext['params'] = _perform_series_fit(
-                func, bounds, order, fitres, point, bound_series_fit, is_poly
+                func, bounds, nterms, fitres, point, bound_series_fit, is_poly
             )
         elif (len(free) > 1) or (is_poly is True):
-            _, expr = multivariate_taylor(func, point, order, False)
+            _, expr = multivariate_taylor(func, point, nterms, False)
         else:
-            _, expr = series_lambda(func, point[0], order, False)
+            _, expr = series_lambda(func, point[0], nterms, False)
     # rewrite polynomial in horner form for fast evaluation
     ext['expr'] = sp.horner(expr)
     polyfunc = sp.lambdify(free, ext['expr'], ("scipy", "numpy"))
