@@ -37,7 +37,10 @@ def lambdify(
     modules.
     """
     if isinstance(func, str):
-        func = sp.sympify(func)
+        try:
+            func = sp.sympify(func)
+        except sp.SympifyError:
+            raise ValueError(f"Unable to parse {func}.")
     # noinspection PyTypeChecker
     return sp.lambdify(
         sorted(func.free_symbols, key=lambda x: str(x)), func, modules
@@ -264,9 +267,9 @@ def rewrite(
     poly_lambda: LmSig,
     precompute: bool = True,
     precision: Optional[Literal[16, 32, 64]] = None
-) -> LmSig:
+) -> tuple[LmSig, str]:
     if precompute is False and precision is None:
-        return poly_lambda
+        return poly_lambda, getsource(poly_lambda)
     # name of arguments to the lambdified function
     free = getfullargspec(poly_lambda).args
     lines = [f"def _lambdifygenerated({', '.join(free)}):"]
@@ -279,10 +282,11 @@ def rewrite(
     if precision is not None:
         polyexpr = force_line_precision(polyexpr, precision)
     lines.append(f"    return {polyexpr}")
+    source = "\n".join(lines)
     # noinspection PyUnresolvedReferences
-    opt = define(compile_source("\n".join(lines)), poly_lambda.__globals__)
+    opt = define(compile_source(source), poly_lambda.__globals__)
     opt.__doc__ = ("\n".join(map(str.strip, lines[1:])))
-    return opt
+    return opt, source
 
 
 def _rewrite_precomputed(polyexpr, free, lines):
@@ -339,7 +343,7 @@ def _perform_series_fit(func, bounds, order, resolution, x0, apply_bounds):
     )
     # insert coefficients into polynomial
     expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
-    return expr
+    return expr, params
 
 
 def quickseries(
@@ -353,17 +357,19 @@ def quickseries(
     jit: bool = False,
     precision: Optional[Literal[16, 32, 64]] = None,
     fit_series_expansion: bool = True,
-    bound_series_fit: bool = False
-) -> LmSig:
+    bound_series_fit: bool = False,
+    extended_output: bool = False
+) -> Union[LmSig, tuple[LmSig, dict]]:
     prefactor = prefactor if prefactor is not None else not jit
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
     if len(expr.free_symbols) == 0:
         raise ValueError("func must have at least one free variable.")
     free = tuple(expr.free_symbols)
     bounds, point = _makebounds(bounds, len(free), point)
+    ext = {}
     if (approx_poly is True) or (not is_simple_poly(expr)):
         if fit_series_expansion is True:
-            expr = _perform_series_fit(
+            expr, ext['params'] = _perform_series_fit(
                 func, bounds, order, resolution, point, bound_series_fit
             )
         elif len(free) > 1:
@@ -371,14 +377,16 @@ def quickseries(
         else:
             _, expr = series_lambda(func, point[0], order, False)
     # rewrite polynomial in horner form for fast evaluation
-    expr = sp.polys.polyfuncs.horner(expr)
-    polyfunc = sp.lambdify(free, expr, ("scipy", "numpy"))
+    ext['expr'] = sp.polys.polyfuncs.horner(expr)
+    polyfunc = sp.lambdify(free, ext['expr'], ("scipy", "numpy"))
     # optionally, rewrite it to precompute stray powers and force precision
-    polyfunc = rewrite(polyfunc, prefactor, precision)
+    polyfunc, ext["source"] = rewrite(polyfunc, prefactor, precision)
     # optionally, convert it to a numbafied CPUDispatcher function
     if jit is True:
         import numba
         polyfunc = numba.njit(polyfunc)
+    if extended_output is True:
+        return polyfunc, ext
     return polyfunc
 
 
@@ -393,16 +401,34 @@ def _makebounds(bounds, n_free, x0):
     return bounds, x0
 
 
+def _offset_check_cycle(
+    absdiff,
+    frange,
+    lamb,
+    quick,
+    vecs,
+    worstpoint,
+):
+    approx_y, orig_y = quick(*vecs), lamb(*vecs)
+    frange = (min(orig_y.min(), frange[0]), max(orig_y.max(), frange[1]))
+    offset = abs(approx_y - orig_y)
+    worstix = np.argmax(offset)
+    if (new_absdiff := offset[worstix]) > absdiff:
+        absdiff = new_absdiff
+        worstpoint = [v[worstix] for v in vecs]
+    return absdiff, np.median(offset), np.std(offset), frange, worstpoint
+
+
 def benchmark(
     func: Union[str, sp.Expr, sp.core.function.FunctionClass],
     offset_resolution: int = 10000,
     n_offset_shuffles: int = 50,
-    timeit_cycles: int = 10000,
+    timeit_cycles: int = 20000,
     testbounds="equal",
     **quickkwargs
 ):
-    lamb = lambdify(sp.sympify(func))
-    quick = quickseries(func, **quickkwargs)
+    lamb = lambdify(func)
+    quick, ext = quickseries(func, **(quickkwargs | {'extended_output': True}))
     if testbounds == "equal":
         testbounds, _ = _makebounds(
             quickkwargs.get("bounds"), len(getfullargspec(lamb).args), None
@@ -457,26 +483,8 @@ def benchmark(
         'stdiff': stdiff,
         'worstpoint': worstpoint,
         'range': frange,
-        'orig_s': orig_s, 
+        'orig_s': orig_s,
         'approx_s': approx_s,
         'timeratio': approx_s / orig_s,
         'quick': quick
-    }
-
-
-def _offset_check_cycle(
-    absdiff,
-    frange,
-    lamb,
-    quick,
-    vecs,
-    worstpoint,
-):
-    approx_y, orig_y = quick(*vecs), lamb(*vecs)
-    frange = (min(orig_y.min(), frange[0]), max(orig_y.max(), frange[1]))
-    offset = abs(approx_y - orig_y)
-    worstix = np.argmax(offset)
-    if (new_absdiff := offset[worstix]) > absdiff:
-        absdiff = new_absdiff
-        worstpoint = [v[worstix] for v in vecs]
-    return absdiff, np.median(offset), np.std(offset), frange, worstpoint
+    } | ext
