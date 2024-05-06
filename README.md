@@ -83,6 +83,9 @@ greater precision but makes the approximation ~20% slower.
   provides most benefit on arrays with tens or hundreds of thousands of elements,
   although this again varies depending on operating environment, the particular
   approximated function, etc.
+* In general, `quickseries` provides more performance benefits for more 'complicated'
+  input functions. This is due to the implicit 'simplification' offered by the 
+  power series expansion.
 * For most functions, placing `point` in the middle of `bounds` will produce the
 best results, and if you don't pass `point` at all, `quickseries` defaults to 
 placing it in the middle of `bounds`.

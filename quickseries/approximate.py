@@ -24,7 +24,7 @@ EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 
 def is_simple_poly(expr: sp.Expr) -> bool:
     gens = sp.poly_from_expr(expr)[1]['gens']
-    return len(gens) == 1 and isinstance(gens[0], sp.Symbol)
+    return all(isinstance(g, sp.Symbol) for g in gens)
 
 
 def lambdify(
@@ -130,7 +130,7 @@ def multivariate_taylor(
 ) -> tuple[LmSig, sp.Expr]:
     if not isinstance(func, sp.Expr):
         func = sp.sympify(func)
-    pointsyms = listify(func.free_symbols)
+    pointsyms = sorted(func.free_symbols, key=lambda s: str(s))
     dimensionality = len(pointsyms)
     argsyms = listify(
         sp.symbols(",".join([f"x{i}" for i in range(dimensionality)]))
@@ -364,7 +364,7 @@ def quickseries(
     expr = func if isinstance(func, sp.Expr) else sp.sympify(func)
     if len(expr.free_symbols) == 0:
         raise ValueError("func must have at least one free variable.")
-    free = tuple(expr.free_symbols)
+    free = sorted(expr.free_symbols, key=lambda s: str(s))
     bounds, point = _makebounds(bounds, len(free), point)
     ext = {}
     if (approx_poly is True) or (not is_simple_poly(expr)):
@@ -416,6 +416,8 @@ def _offset_check_cycle(
     if (new_absdiff := offset[worstix]) > absdiff:
         absdiff = new_absdiff
         worstpoint = [v[worstix] for v in vecs]
+    if absdiff > 0.01:
+        raise ValueError
     return absdiff, np.median(offset), np.std(offset), frange, worstpoint
 
 
