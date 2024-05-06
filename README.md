@@ -49,11 +49,11 @@ approx runtime:
 
 ## tips
 
-* `quickseries.benchmark()` offers an easy way to test the precision and
+* `quickseries.benchmark()` offers an easy way to test the accuracy and
   efficiency of `quickseries.quickseries()`-generated approximations.
 * Narrowing `bounds` will tend to make the approximation more accurate within
 those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
-~20x greater precision within the (-1, 1) interval (with the downside that 
+~20x greater accuracy within the (-1, 1) interval (with the downside that 
 the resulting approximation will get pretty bad past about +/-pi/2).
     * Like many optimizers, `quickseries()` tends to be much more effective 
       closer to 0 and when its input arguments have similar orders of 
@@ -66,13 +66,13 @@ the resulting approximation will get pretty bad past about +/-pi/2).
       generally be better to keep their input values small.
 * Increasing `order` will tend to make the approximation slower but more 
 precise. In the example above, increasing `order` to 14 provides ~20x 
-greater precision but makes the approximation ~20% slower.
+greater accuracy but makes the approximation ~20% slower.
   * This tends to have diminishing returns. In the example above, increasing 
-  `order` to 30 provides no meaningful increase in precision over `order=14`, 
+  `order` to 30 provides no meaningful increase in accuracy over `order=14`, 
   but makes the approximation *slower* than `np.sin(x) * np.cos(x)`.
   * Setting `order` too high can also cause the approximation algorithm to
   fail entirely.
-  * The location of precision/performance "sweet spots" in the parameter space 
+  * The location of accuracy/performance "sweet spots" in the parameter space 
   depends on the function and the approximation bounds. If you want to 
   seriously optimize a particular function in a particular interval, you will 
   need to play around with these parameters.
@@ -112,7 +112,7 @@ but instead simply attempts to rewrite it in a more efficient form.
       set `order` >= that polynomial's order. If you do, the function 
       `quickseries()` generates will typically be very similar to a simple 
       rewrite of the input polynomial, but with slightly worse performance and 
-      precision.
+      accuracy.
 * `quickseries()` is also capable of auto-jitting the functions it generates
 with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
 install it with your preferred package manager.
@@ -127,7 +127,7 @@ install it with your preferred package manager.
   guarantee that the function it returns will not cast input values to bit widths
   greater than the value of `precision`. Legal values of `precision` are 16, 32, 
   and 64. The returned function will not, however, attempt to reduce the precision
-  of its arguments. For instance `quickseries("sin(x) + exp(x)", precision=32)`
+  of its arguments. For instance, `quickseries("sin(x) + exp(x)", precision=32)`
   will return a Python `float` if passed an `float`, and a `np.float64` `ndarray`
   if passed a `np.float64` `ndarray`. However, it will return a `np.float32`
   `ndarray` if passed a `np.float32` `ndarray`, which is not guaranteed without
