@@ -327,14 +327,15 @@ def _perform_series_fit(func, bounds, order, resolution, x0, apply_bounds):
         if "converted to Python scalars" not in str(err):
             raise
         dep = np.array([lamb(v) for v in vecs])
-    kw = {}
-    if apply_bounds is True:
-        kw['bounds'] = (-5, 5)
     guess = [
         1 for _ in range(len(signature(approx).parameters) - len(vecs))
     ]
     params, _ = fit(
-        func=approx, vecs=vecs, dependent_variable=dep, guess=guess, **kw
+        func=approx,
+        vecs=vecs,
+        dependent_variable=dep,
+        guess=guess,
+        bounds=(-5, 5) if apply_bounds is True else None
     )
     # insert coefficients into polynomial
     expr = expr.subs({f'a_{i}': coef for i, coef in enumerate(params)})
