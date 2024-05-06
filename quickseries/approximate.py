@@ -283,7 +283,7 @@ def rewrite(
     # and a return statement; lastline() strips it
     polyexpr = lastline(poly_lambda)
     # remove pointless '1.0' terms
-    polyexpr = re.sub(r"(?:\*+)?1\.0(?:\*+)?", "", polyexpr)
+    polyexpr = re.sub(r"(?:\*+)?1\.0\*+", "", polyexpr)
     if precompute is True:
         polyexpr, lines = _rewrite_precomputed(polyexpr, free, lines)
     if precision is not None:
