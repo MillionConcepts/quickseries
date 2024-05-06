@@ -250,7 +250,7 @@ def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
     constructor = getattr(np, f"float{precision}")
     last, out = 0, ""
     for match in re.finditer(
-        r"([+* (-]+)([\d.]+)(e[+\-]?\d+)?.*?([+* )]|$)", line
+        r"([+* (-]+|^)([\d.]+)(e[+\-]?\d+)?.*?([+* )]|$)", line
     ):
         out += line[last:match.span()[0]]
         # don't replace exponents
