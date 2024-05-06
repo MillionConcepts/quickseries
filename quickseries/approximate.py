@@ -48,11 +48,18 @@ def lambdify(
 
 
 def _rectify_series(series, add_coefficients):
+    if isinstance(series, sp.Order):
+        raise ValueError(
+            "Cannot produce a meaningful approximation with the requested "
+            "parameters (most likely order is too low)."
+        )
     outargs, coefsyms = [], []
     for a in series.args:
         # NOTE: the Expr.evalf() calls are simply to try to evaluate
         #  anything we can.
-        if isinstance(a, sp.Order):
+        if hasattr(a, "evalf") and isinstance((n := a.evalf()), sp.Number):
+            outargs.append(n)
+        elif isinstance(a, sp.Order):
             continue
         elif isinstance(a, (sp.Mul, sp.Symbol, sp.Pow)):
             if add_coefficients is True:
@@ -61,8 +68,6 @@ def _rectify_series(series, add_coefficients):
                 coefsyms.append(coefficient)
             else:
                 outargs.append(a.evalf())
-        elif isinstance((number := a.evalf()), sp.Number):
-            outargs.append(number)
         else:
             raise ValueError(
                 f"don't know how to handle expression element {a} of "
@@ -277,6 +282,8 @@ def rewrite(
     # the Python expression form of the hornerized polynomial
     # and a return statement; lastline() strips it
     polyexpr = lastline(poly_lambda)
+    # remove pointless '1.0' terms
+    polyexpr = re.sub(r"(?:\*+)?1\.0(?:\*+)?", "", polyexpr)
     if precompute is True:
         polyexpr, lines = _rewrite_precomputed(polyexpr, free, lines)
     if precision is not None:
@@ -318,12 +325,14 @@ def _pvec(bounds, offset_resolution):
     return [j[i] for j, i in zip(axes, indices)]
 
 
-def _perform_series_fit(func, bounds, order, resolution, x0, apply_bounds):
-    if len(bounds) == 1:
-        approx, expr = series_lambda(func, x0[0], order, True)
+def _perform_series_fit(
+    func, bounds, order, fitres, point, apply_bounds, is_poly
+):
+    if (len(bounds) == 1) or (is_poly is True):
+        approx, expr = series_lambda(func, point[0], order, True)
     else:
-        approx, expr = multivariate_taylor(func, x0, order, True)
-    lamb, vecs = lambdify(func), _pvec(bounds, resolution)
+        approx, expr = multivariate_taylor(func, point, order, True)
+    lamb, vecs = lambdify(func), _pvec(bounds, fitres)
     try:
         dep = lamb(*vecs)
     except TypeError as err:
@@ -351,7 +360,7 @@ def quickseries(
     bounds: tuple[float, float] = (-1, 1),
     order: int = 9,
     point: Optional[float] = None,
-    resolution: int = 100,
+    fitres: int = 100,
     prefactor: Optional[bool] = None,
     approx_poly: bool = False,
     jit: bool = False,
@@ -366,18 +375,18 @@ def quickseries(
         raise ValueError("func must have at least one free variable.")
     free = sorted(expr.free_symbols, key=lambda s: str(s))
     bounds, point = _makebounds(bounds, len(free), point)
-    ext = {}
-    if (approx_poly is True) or (not is_simple_poly(expr)):
+    ext, is_poly = {}, is_simple_poly(expr)
+    if (approx_poly is True) or (is_poly is False):
         if fit_series_expansion is True:
             expr, ext['params'] = _perform_series_fit(
-                func, bounds, order, resolution, point, bound_series_fit
+                func, bounds, order, fitres, point, bound_series_fit, is_poly
             )
-        elif len(free) > 1:
-            approx, expr = multivariate_taylor(func, point, order, False)
+        elif (len(free) > 1) or (is_poly is True):
+            _, expr = multivariate_taylor(func, point, order, False)
         else:
             _, expr = series_lambda(func, point[0], order, False)
     # rewrite polynomial in horner form for fast evaluation
-    ext['expr'] = sp.polys.polyfuncs.horner(expr)
+    ext['expr'] = sp.horner(expr)
     polyfunc = sp.lambdify(free, ext['expr'], ("scipy", "numpy"))
     # optionally, rewrite it to precompute stray powers and force precision
     polyfunc, ext["source"] = rewrite(polyfunc, prefactor, precision)
