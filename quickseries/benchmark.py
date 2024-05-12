@@ -1,11 +1,11 @@
+import timeit
 from inspect import getfullargspec
 from itertools import product
-import timeit
 from typing import Union
 
-from dustgoggles.func import gmap
 import numpy as np
 import sympy as sp
+from dustgoggles.func import gmap
 
 from quickseries import quickseries
 from quickseries.approximate import _makebounds
@@ -36,10 +36,13 @@ def benchmark(
     n_offset_shuffles: int = 50,
     timeit_cycles: int = 20000,
     testbounds="equal",
+    cache: bool = False,
     **quickkwargs
 ):
     lamb = lambdify(func)
-    quick, ext = quickseries(func, **(quickkwargs | {'extended_output': True}))
+    quick, ext = quickseries(
+        func, **(quickkwargs | {'extended_output': True, 'cache': cache})
+    )
     if testbounds == "equal":
         testbounds, _ = _makebounds(
             quickkwargs.get("bounds"), len(getfullargspec(lamb).args), None

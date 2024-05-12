@@ -277,15 +277,15 @@ def quickseries(
 ) -> Union[LmSig, tuple[LmSig, dict]]:
     if not isinstance(func, (str, sp.Expr)):
         raise TypeError(f"Unsupported type for func {type(func)}.")
-    if cache is True and (polyfunc := _cacheget()) is not None:
-        if extended_output is True:
-            warnings.warn(
-                "cache hit with cache=True and extended_output=True; "
-                "returning empty dict for extended output"
-            )
-        ext = {}
-    else:
-        ext = _make_quickseries(
+    polyfunc, ext = None, {"cache": "off"}
+    if cache is True:
+        polyfunc, source = _cacheget()
+        if polyfunc is not None:
+            ext |= {"source": source, "cache": "hit"}
+        else:
+            ext["cache"] = "miss"
+    if polyfunc is None:
+        ext |= _make_quickseries(
             approx_poly,
             bound_series_fit,
             bounds,

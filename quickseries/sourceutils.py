@@ -93,10 +93,10 @@ def _compile_quickseries(source, jit, cachefile):
 def _cacheget(jit=False):
     cachefile, key = _cacheid()
     if not cachefile.exists():
-        return None
+        return None, None
     with cachefile.open() as stream:
         source = stream.read()
-    return _compile_quickseries(source, jit, cachefile)
+    return _compile_quickseries(source, jit, cachefile), source
 
 
 def _cachewrite(source, cachefile):
