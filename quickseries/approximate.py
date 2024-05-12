@@ -1,19 +1,17 @@
+import re
 from inspect import getfullargspec, signature
 from itertools import chain
-import re
 from typing import Literal, Optional, Sequence, Union
-import warnings
 
-from cytoolz import groupby
-from dustgoggles.dynamic import define, getsource
-from dustgoggles.func import gmap
 import numpy as np
 import sympy as sp
+from cytoolz import groupby
+from dustgoggles.func import gmap
 
 from quickseries.expansions import multivariate_taylor, series_lambda
 from quickseries.simplefit import fit
 from quickseries.sourceutils import (
-    _cacheget, _cachewrite, compile_source, lastline, _cacheid, cache_source, _cachekey, _finalize_quickseries
+    _cacheget, _cacheid, _finalize_quickseries, lastline
 )
 from quickseries.sputils import LmSig, lambdify
 
@@ -273,7 +271,7 @@ def quickseries(
     fit_series_expansion: bool = True,
     bound_series_fit: bool = False,
     extended_output: bool = False,
-    cache: bool = False,
+    cache: bool = True,
 ) -> Union[LmSig, tuple[LmSig, dict]]:
     if not isinstance(func, (str, sp.Expr)):
         raise TypeError(f"Unsupported type for func {type(func)}.")

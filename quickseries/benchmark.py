@@ -1,6 +1,7 @@
 import timeit
 from inspect import getfullargspec
 from itertools import product
+from time import time
 from typing import Union
 
 import numpy as np
@@ -40,9 +41,11 @@ def benchmark(
     **quickkwargs
 ):
     lamb = lambdify(func)
+    compile_start = time()
     quick, ext = quickseries(
         func, **(quickkwargs | {'extended_output': True, 'cache': cache})
     )
+    gentime = time() - compile_start
     if testbounds == "equal":
         testbounds, _ = _makebounds(
             quickkwargs.get("bounds"), len(getfullargspec(lamb).args), None
@@ -100,5 +103,6 @@ def benchmark(
         'orig_s': orig_s,
         'approx_s': approx_s,
         'timeratio': approx_s / orig_s,
-        'quick': quick
+        'gentime': gentime,
+        'polyfunc': quick
     } | ext

@@ -66,7 +66,7 @@ approx runtime:
 ## tips
 
 * `quickseries.benchmark()` offers an easy way to test the accuracy and
-  efficiency of `quickseries.quickseries()`-generated approximations.
+  efficiency of `quickseries.quickseries()`-generated functions.
 * Narrowing `bounds` will tend to make the approximation more accurate within
 those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
 ~20x greater accuracy within the (-1, 1) interval (with the downside that 
@@ -140,6 +140,17 @@ install it with your preferred package manager.
   * In addition to the other inconveniences that may arise from just-in-time
   compilation, some functions that work well without `numba` may not work well
   with `numba`.
+* By default, `quickseries()` caches the code it generates (as well
+as the results of `numba` JIT compilation, if active). If you wish to turn
+this behavior off, pass `cache=False`.
+  * If you call `quickseries()` with the same arguments from separate modules, 
+    it will write separate caches for each module.
+  * ipython/Jupyter shells/kernels all share one cache within the same user 
+    account.
+  * `quickseries()` treats stdin or similar 'anonymous' invocation contexts 
+    like modules named "__quickseries_anonymous_caller_cache__" in the current 
+    working directory.
+  * Caching is turned _off_ by default for `benchmark()`.
 * If you pass the `precision` argument to `quickseries()`, it will attempt to
   guarantee that the function it returns will not cast input values to bit widths
   greater than the value of `precision`. Legal values of `precision` are 16, 32, 
