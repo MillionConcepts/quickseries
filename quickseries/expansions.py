@@ -93,8 +93,7 @@ def multivariate_taylor(
     nterms: int,
     add_coefficients: bool = False
 ) -> tuple[LmSig, sp.Expr]:
-    if not isinstance(func, sp.Expr):
-        func = sp.sympify(func)
+    func = sp.sympify(func) if isinstance(func, str) else func
     pointsyms = sorted(func.free_symbols, key=lambda s: str(s))
     dimensionality = len(pointsyms)
     argsyms = listify(
@@ -111,6 +110,8 @@ def multivariate_taylor(
         [(x - a) ** i for x, a, i in zip(argsyms, pointsyms, ixsyms)]
     )
     taylor = deriv / fact * err
+    # TODO, probably: there's a considerably faster way to do this in some cases
+    #  by precomputing partial derivatives
     decomp = additive_combinations(dimensionality, nterms - 1)
     built = reduce(
         sp.Add,
