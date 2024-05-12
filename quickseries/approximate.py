@@ -107,7 +107,7 @@ def optimize_exponents(
 
 
 def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
-    constructor_rep = f"numpy.float{precision}"
+    constructor_rep = f"float{precision}"
     constructor = getattr(np, f"float{precision}")
     last, out = 0, ""
     for match in re.finditer(
@@ -277,7 +277,7 @@ def quickseries(
         raise TypeError(f"Unsupported type for func {type(func)}.")
     polyfunc, ext = None, {"cache": "off"}
     if cache is True:
-        polyfunc, source = _cacheget()
+        polyfunc, source = _cacheget(jit)
         if polyfunc is not None:
             ext |= {"source": source, "cache": "hit"}
         else:

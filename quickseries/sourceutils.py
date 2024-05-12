@@ -76,20 +76,19 @@ def _cacheid():
     return _cachedir(callfile) / key / "func", key
 
 
-def _compile_quickseries(source, jit, cachefile):
-    if "numpy" in source:
+def _compile_quickseries(source, jit, cache, cachefile):
+    globals_ = globals()
+    if (precmatch := re.search(r"float\d\d", source)) is not None:
         import numpy
 
-        globals_ = {"numpy": numpy}
-    else:
-        globals_ = {}
+        globals_[precmatch.group()] = getattr(numpy, precmatch.group())
     func = FunctionType(compile_source(source, str(cachefile)), globals_)
     cache_source(source, cachefile)
     func.__doc__ = source
     if jit is True:
         import numba as nb
 
-        return nb.njit(func)
+        return nb.njit(func, cache=cache)
     return func
 
 
@@ -99,11 +98,14 @@ def _cacheget(jit=False):
         return None, None
     with cachefile.open() as stream:
         source = stream.read()
-    return _compile_quickseries(source, jit, cachefile), source
+    return _compile_quickseries(source, jit, True, cachefile), source
 
 
 def _cachewrite(source, cachefile):
-    cachefile.parent.mkdir(exist_ok=True, parents=True)
+    # we make the __pycache__ directory to enable numba JIT result caching,
+    # just in case it happens; if it doesn't, the presence of the directory is
+    # harmless.
+    (cachefile.parent / "__pycache__").mkdir(exist_ok=True, parents=True)
     # TODO, maybe: use a more sensible data structure
     with cachefile.open("w") as stream:
         stream.write(source)
@@ -115,7 +117,7 @@ def _finalize_quickseries(source, jit=False, cache=False):
     cachefile, key = _cacheid()
     if cache is True:
         _cachewrite(source, cachefile)
-    return _compile_quickseries(source, jit, cachefile)
+    return _compile_quickseries(source, jit, cache, cachefile)
 
 
 def lastline(func: Callable) -> str:

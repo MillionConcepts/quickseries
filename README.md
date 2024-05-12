@@ -140,9 +140,8 @@ install it with your preferred package manager.
   * In addition to the other inconveniences that may arise from just-in-time
   compilation, some functions that work well without `numba` may not work well
   with `numba`.
-* By default, `quickseries()` caches the code it generates (as well
-as the results of `numba` JIT compilation, if active). If you wish to turn
-this behavior off, pass `cache=False`.
+* By default, `quickseries()` caches the code it generates. If you wish to 
+  turn this behavior off, pass `cache=False`.
   * If you call `quickseries()` with the same arguments from separate modules, 
     it will write separate caches for each module.
   * ipython/Jupyter shells/kernels all share one cache within the same user 
@@ -150,6 +149,8 @@ this behavior off, pass `cache=False`.
   * `quickseries()` treats stdin or similar 'anonymous' invocation contexts 
     like modules named "__quickseries_anonymous_caller_cache__" in the current 
     working directory.
+  * In this mode, `quickseries()` also caches the results of `numba` JIT 
+    compilation, if it is active.
   * Caching is turned _off_ by default for `benchmark()`.
 * If you pass the `precision` argument to `quickseries()`, it will attempt to
   guarantee that the function it returns will not cast input values to bit widths
