@@ -3,10 +3,9 @@ from hashlib import md5
 from inspect import currentframe, getargvalues, getsource
 import linecache
 from pathlib import Path
-import random
-from string import ascii_lowercase
+import re
 from types import FunctionType
-from typing import Optional, Callable
+from typing import Callable
 
 from dustgoggles.dynamic import define, get_codechild
 
@@ -35,8 +34,8 @@ def compile_source(source: str, fn: str = ""):
 
 
 def _cachedir(callfile: str) -> Path:
-    if "interactiveshell.py" in callfile:
-        import IPython
+    if callfile == 'ipython_shell':
+        import IPython.paths
 
         return Path(IPython.paths.get_ipython_cache_dir()) / "qs_cache"
     return Path(callfile).parent / "__pycache__" / "qs_cache"
@@ -65,8 +64,12 @@ def _cacheid():
         elif hasattr(frame.f_code, "co_name"):
             if args is None and frame.f_code.co_name == "quickseries":
                 args = getargvalues(frame)
+            elif frame.f_code.co_name == "benchmark":
+                continue
             elif args is not None:
                 callfile = frame.f_code.co_filename
+                if re.search(r"interactiveshell.py|ipython", callfile):
+                    callfile = 'ipython_shell'
     if args is None:
         raise ReferenceError("Cannot use _cachefile() outside quickseries().")
     key = _cachekey(args, callfile)
