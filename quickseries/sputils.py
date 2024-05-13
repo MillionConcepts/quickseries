@@ -1,9 +1,10 @@
-from typing import Any, Callable, Sequence, Union
+from typing import Callable, Sequence, Union
 
 import numpy as np
 import sympy as sp
 
 LmSig = Callable[[np.ndarray | float, ...], np.ndarray | float]
+"""signature of sympy-lambdified numpy/scipy functions"""
 
 
 def lambdify(

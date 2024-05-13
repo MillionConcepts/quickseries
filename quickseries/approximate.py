@@ -15,7 +15,6 @@ from quickseries.sourceutils import (
 )
 from quickseries.sputils import LmSig, lambdify
 
-"""signature of sympy-lambdified numpy/scipy functions"""
 
 EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
