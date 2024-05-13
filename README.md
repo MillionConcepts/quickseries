@@ -5,7 +5,7 @@ series approximations of mathematical functions. It can provide performance
 improvements ranging from ~3x (simple functions, no fiddling around with 
 parameters) to ~100x (complicated functions, some parameter tuning).
 
-`quickseries` is in alpha; bug reports are appreciated.
+`quickseries` is in beta; bug reports are appreciated.
 
 Install from source using `pip install .`. Dependencies are also described
 in a Conda `environment.yml` file.
