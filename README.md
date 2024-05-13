@@ -7,8 +7,10 @@ parameters) to ~100x (complicated functions, some parameter tuning).
 
 `quickseries` is in beta; bug reports are appreciated.
 
-Install from source using `pip install .`. Dependencies are also described
-in a Conda `environment.yml` file.
+## installation
+
+`quickseries` is available on PyPi; install with `pip install quickseries`.
+It will be available from `conda-forge` shortly.
 
 The minimum supported version of Python is *3.11*.
 
