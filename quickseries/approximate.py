@@ -1,7 +1,7 @@
 import re
 from inspect import getfullargspec, signature
 from itertools import chain
-from typing import Literal, Optional, Sequence, Union
+from typing import Literal, Optional, Sequence, Union, Collection
 
 import numpy as np
 import sympy as sp
@@ -31,7 +31,11 @@ def regexponents(text: str) -> tuple[int]:
     return tuple(map(int, re.findall(EXP_PATTERN, text)))
 
 
-def _decompose(remaining, reduced, replacements):
+def _decompose(
+    remaining: tuple[str],
+    reduced: set[str],
+    replacements: list[tuple[int, list[int]]]
+) -> bool:
     if len(remaining) == 1:  # trivial case
         replacements[0][1][:] = [1 for _ in range(replacements[0][0])]
         return True
@@ -154,7 +158,9 @@ def rewrite(
     return "\n    ".join(lines)
 
 
-def _rewrite_precomputed(polyexpr, free):
+def _rewrite_precomputed(
+    polyexpr: str, free: Collection[str]
+) -> tuple[str, list[str]]:
     # replacements: what factors we will decompose each exponent into
     # free: which factors we will define as variables, and their
     # "building blocks"
@@ -178,15 +184,23 @@ def _rewrite_precomputed(polyexpr, free):
     return polyexpr, factorlines
 
 
-def _pvec(bounds, offset_resolution):
+def _pvec(
+    bounds: Sequence[tuple[float, float]], offset_resolution: int
+) -> list[np.ndarray]:
     axes = [np.linspace(*b, offset_resolution) for b in bounds]
     indices = map(np.ravel, np.indices([offset_resolution for _ in bounds]))
     return [j[i] for j, i in zip(axes, indices)]
 
 
 def _perform_series_fit(
-    func, bounds, nterms, fitres, point, apply_bounds, is_poly
-):
+    func: str | sp.Expr,
+    bounds: tuple[float, float] | Sequence[tuple[float, float]],
+    nterms: int,
+    fitres: int,
+    point: float | Sequence[float],
+    apply_bounds: bool,
+    is_poly: bool
+) -> tuple[sp.Expr, np.ndarray]:
     if (len(bounds) == 1) and (is_poly is False):
         approx, expr = series_lambda(func, point[0], nterms, True)
     else:
@@ -212,29 +226,33 @@ def _perform_series_fit(
     return expr, params
 
 
-def _makebounds(bounds, n_free, x0):
+def _makebounds(
+    bounds: Optional[Sequence[tuple[float, float]] | tuple[float, float]],
+    n_free: int,
+    point: Optional[Sequence[float] | float]
+) -> tuple[list[tuple[float, float]], list[float]]:
     bounds = (-1, 1) if bounds is None else bounds
     if not isinstance(bounds[0], (list, tuple)):
         bounds = [bounds for _ in range(n_free)]
-    if x0 is None:
-        x0 = [np.mean(b) for b in bounds]
-    elif not isinstance(x0, (list, tuple)):
-        x0 = [x0 for _ in bounds]
-    return bounds, x0
+    if point is None:
+        point = [np.mean(b) for b in bounds]
+    elif not isinstance(point, (list, tuple)):
+        point = [point for _ in bounds]
+    return bounds, point
 
 
 def _make_quickseries(
-    approx_poly,
-    bound_series_fit,
-    bounds,
+    approx_poly: bool,
+    bound_series_fit: bool,
+    bounds: Optional[Sequence[tuple[float, float]] | tuple[float, float]],
     expr: sp.Expr,
-    fit_series_expansion,
-    fitres,
-    nterms,
-    point,
-    precision,
-    prefactor,
-):
+    fit_series_expansion: bool,
+    fitres: int,
+    nterms: int,
+    point: Optional[Sequence[float] | float],
+    precision: Optional[Literal[16, 32, 64]],
+    prefactor: bool,
+) -> dict[str, sp.Expr | np.ndarray | str]:
     if len(expr.free_symbols) == 0:
         raise ValueError("func must have at least one free variable.")
     free = sorted(expr.free_symbols, key=lambda s: str(s))

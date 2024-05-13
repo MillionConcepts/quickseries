@@ -7,7 +7,11 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-def fit_wrap(func, dimensionality, fit_parameters):
+def fit_wrap(
+    func: Callable[[np.ndarray | float, ...], np.ndarray | float],
+    dimensionality: int,
+    fit_parameters: Sequence[str]
+) -> Callable[[np.ndarray | float, ...], np.ndarray | float]:
     @wraps(func)
     def wrapped_fit(independent_variable, *params):
         variable_components = [
@@ -34,7 +38,7 @@ def fit(
     bounds: Optional[
         Union[tuple[tuple[float, float]], tuple[float, float]]
     ] = None
-):
+) -> tuple[np.ndarray, np.ndarray]:
     sig = signature(func)
     assert len(vecs) < len(sig.parameters), (
         "The model function must have at least one 'free' "
@@ -50,6 +54,7 @@ def fit(
         raise ValueError("each input vector must be 1-dimensional")
     # TODO: optional goodness-of-fit evaluation
     kw = {'bounds': bounds} if bounds is not None else {}
+    # noinspection PyTypeChecker
     return curve_fit(
         fit_wrap(func, len(vecs), fit_parameters),
         vecs,

@@ -2,7 +2,7 @@ import timeit
 from inspect import getfullargspec
 from itertools import product
 from time import time
-from typing import Union
+from typing import Union, Sequence, Optional
 
 import numpy as np
 import sympy as sp
@@ -10,17 +10,17 @@ from dustgoggles.func import gmap
 
 from quickseries import quickseries
 from quickseries.approximate import _makebounds
-from quickseries.sputils import lambdify
+from quickseries.sputils import lambdify, LmSig
 
 
 def _offset_check_cycle(
-    absdiff,
-    frange,
-    lamb,
-    quick,
-    vecs,
-    worstpoint,
-):
+    absdiff: float,
+    frange: tuple[float, float],
+    lamb: LmSig,
+    quick: LmSig,
+    vecs: Sequence[np.ndarray],
+    worstpoint: Optional[list[float]],
+) -> tuple[float, float, float, tuple[float, float], list[float]]:
     approx_y, orig_y = quick(*vecs), lamb(*vecs)
     frange = (min(orig_y.min(), frange[0]), max(orig_y.max(), frange[1]))
     offset = abs(approx_y - orig_y)
@@ -39,7 +39,7 @@ def benchmark(
     testbounds="equal",
     cache: bool = False,
     **quickkwargs
-):
+) -> dict[str, sp.Expr | float | np.ndarray | str | list[float]]:
     lamb = lambdify(func)
     compile_start = time()
     quick, ext = quickseries(

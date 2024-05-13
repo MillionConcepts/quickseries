@@ -3,7 +3,7 @@ from typing import Any, Callable, Sequence, Union
 import numpy as np
 import sympy as sp
 
-LmSig = Callable[[Any], Union[np.ndarray, float]]
+LmSig = Callable[[np.ndarray | float, ...], np.ndarray | float]
 
 
 def lambdify(

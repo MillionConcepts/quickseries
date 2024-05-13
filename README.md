@@ -10,7 +10,7 @@ parameters) to ~100x (complicated functions, some parameter tuning).
 Install from source using `pip install .`. Dependencies are also described
 in a Conda `environment.yml` file.
 
-Examples and tips follow. Further documentation forthcoming.
+The minimum supported version of Python is *3.11*.
 
 ## example of use
 
@@ -34,36 +34,8 @@ approx runtime:
 325 µs ± 3.89 µs per loop (mean ± std. dev. of 7 runs, 1,000 loops each)
 ```
 
-## limitations
 
-* `quickseries` only works for functions ℝ<sup>_n_</sup>🡒ℝ for finite _n_. In
-  programming terms, this means it will only produce functions that accept a 
-  fixed number of floating-point or integer arguments (which may be 'arraylike'
-  objects such as pandas `Series` or numpy `ndarrays`) and return a single 
-  floating-point value (or a 1-D floating-point array if passed arraylike 
-  arguments).
-* `quickseries` only works consistently on functions that are continuous and 
-  infinitely differentiable within the domain of interest. Specifically, they
-  should not have singularities, discontinuities, or infinite / undefined 
-  values at `point` or within `bounds`. Failure cases differ:
-  * `quickseries` will always fail on functions that are infinite/undefined 
-    at `point`, like `quickseries("ln(x)", point=-1)`.
-  * It will almost always fail on functions with a largeish interval of 
-    infinite/undefined values within `bounds`, such as
-    `quickseries("gamma(x)", bounds=(-1.1, 0), point=-0.5)`.
-  * It will usually succeed but produce bad results on functions with 
-    singularities or point discontinuities within `bounds` or 
-    near `point` but not at `point`, such as `quickseries("tan(x)", bounds=(1, 2))`.
-  * It will often succeed, but usually produce bad results, on univariate 
-    functions that are continuous but not differentiable at `point`, such as 
-    `quickseries("abs(sin(x))", point=0)`. It will always fail on multivariate 
-    functions of this kind.
-* Functions given to `quickseries` must be expressed in strict closed form 
-  and include only finite terms. They cannot contain limits, integrals, 
-  derivatives, summations, continued fractions, etc.  
-* `quickseries` is not guaranteed to work for all such functions.
-
-## tips
+## usage notes
 
 * Multivariate `quickseries()`-generated functions always map positional arguments
   to variables in the string representation of the input function in alphanumeric
@@ -210,3 +182,42 @@ install it with your preferred package manager.
     compiler implicitly performs a similar optimization, and computing these
     terms explicitly tends to be counterproductive. If you want `quickseries`
     to do it anyway, you can pass `prefactor=True`.
+
+
+## tips
+
+
+## limitations
+
+* `quickseries` only works for functions ℝ<sup>_n_</sup>🡒ℝ for finite _n_. In
+  programming terms, this means it will only produce functions that accept a 
+  fixed number of floating-point or integer arguments (which may be 'arraylike'
+  objects such as pandas `Series` or numpy `ndarrays`) and return a single 
+  floating-point value (or a 1-D floating-point array if passed arraylike 
+  arguments).
+* `quickseries` only works consistently on functions that are continuous and 
+  infinitely differentiable within the domain of interest. Specifically, they
+  should not have singularities, discontinuities, or infinite / undefined 
+  values at `point` or within `bounds`. Failure cases differ:
+  * `quickseries` will always fail on functions that are infinite/undefined 
+    at `point`, like `quickseries("ln(x)", point=-1)`.
+  * It will almost always fail on functions with a largeish interval of 
+    infinite/undefined values within `bounds`, such as
+    `quickseries("gamma(x)", bounds=(-1.1, 0), point=-0.5)`.
+  * It will usually succeed but produce bad results on functions with 
+    singularities or point discontinuities within `bounds` or 
+    near `point` but not at `point`, such as `quickseries("tan(x)", bounds=(1, 2))`.
+  * It will often succeed, but usually produce bad results, on univariate 
+    functions that are continuous but not differentiable at `point`, such as 
+    `quickseries("abs(sin(x))", point=0)`. It will always fail on multivariate 
+    functions of this kind.
+* Functions given to `quickseries` must be expressed in strict closed form 
+  and include only finite terms. They cannot contain limits, integrals, 
+  derivatives, summations, continued fractions, etc.  
+* `quickseries` is not guaranteed to work for all such functions.
+
+## tests
+
+`quickseries` has a few simple tests. You can run them by executing `pytest`
+in the repository's root directory. More comprehensive test coverage is 
+planned.
