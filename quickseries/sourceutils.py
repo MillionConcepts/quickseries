@@ -9,6 +9,7 @@ from typing import Callable
 
 from dustgoggles.dynamic import define, get_codechild
 
+
 CACHE_ARGS = (
     "func",
     "bounds",
@@ -42,11 +43,16 @@ def _cachedir(callfile: str) -> Path:
 
 
 def _cachekey(args, callfile=None):
+    from quickseries import __version__
+
     # TODO: is this actually stable?
     arghash = pickle.dumps(
-        {a: args.locals[a] for a in sorted(CACHE_ARGS)} | {'f': callfile}
+        {a: args.locals[a] for a in sorted(CACHE_ARGS)}
+        | {'f': callfile, '__version__': __version__}
     )
-    return f"quickseries_{md5(arghash).hexdigest()}"
+    # arbitrary cutoff for a reasonable tradeoff between collision safety and
+    # readability
+    return f"quickseries_{md5(arghash).hexdigest()}"[:-18]
 
 
 # TODO, maybe: the frame traversal is potentially wasteful when repeated,

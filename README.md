@@ -65,7 +65,29 @@ approx runtime:
 
 ## tips
 
-* `quickseries.benchmark()` offers an easy way to test the accuracy and
+* Multivariate `quickseries()`-generated functions always map positional arguments
+  to variables in the string representation of the input function in alphanumeric
+  order. This is in order to maintain consistency between slightly different 
+  forms of the same expression.
+  * Examples:
+    * `quickseries("cos(x) * sin(y)")(1, 2)` approximates `sin(1) * cos(2)`
+    * `quickseries("sin(y) * cos(x)")(1, 2)` approximates `cos(1) * sin(2)` 
+    * `quickseries("sin(x) * cos(y)")(1, 2)` approximates `sin(1) * cos(2)`
+  * Note that you can always determine the argument order of a `quickseries()`-
+    generated function by using the `help()` builtin, `inspect.getfullargspec()`,
+    examining the function's docstring, etc.
+* Most legal Python variable names are allowable names for free variables.
+  Named mathematical functions and constants are the major exceptions.
+  * Examples:
+    * `"ln(_)"`, `"ln(One_kitty)"`, `"ln(x0)"`, and `"ln(ă)"` will all work fine.
+    * `"ln(if)"` and `"ln(🔥)"` will both fail, because `if` and `🔥` are not
+      legal Python variable names.
+    * `"ln(gamma)"` will fail, because `quickseries()` will interpret "gamma"
+      as the gamma function.
+    * `"cos(x) * cos(pi * 2)"` will succeed, but `quickseries()` will interpret 
+      it as "the cosine of a variable named 'x' times the cosine of two times
+      the mathematical constant pi" -- in other words, as `"cos(x)"`.
+  * `quickseries.benchmark()` offers an easy way to test the accuracy and
   efficiency of `quickseries.quickseries()`-generated functions.
 * Narrowing `bounds` will tend to make the approximation more accurate within
 those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
