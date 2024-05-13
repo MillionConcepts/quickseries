@@ -37,6 +37,44 @@ approx runtime:
 
 ## usage notes
 
+### features
+
+* The most important keyword arguments to `quickseries` are `bounds`, 
+  `nterms`, and `point`. `bounds` specifies the range (or ranges, for 
+  multivariate functions) of values across which to approximate the function. 
+  `nterms` specifies how many terms to use in the series expansion. `point`
+  specifies the value (or values, for multivariate functions) about which
+  to generate the series expansion. See "limitations" and "tips" below for 
+  examples and discussion.
+* `quickseries()` is capable of auto-jitting the functions it generates
+with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
+install it with your preferred package manager.
+* `quickseries.benchmark()` offers an easy way to test the accuracy and
+efficiency of `quickseries.quickseries()`-generated functions.
+* By default, `quickseries()` caches the code it generates. If you wish to 
+  turn this behavior off, pass `cache=False`.
+  * If you call `quickseries()` with the same arguments from separate modules, 
+    it will write separate caches for each module.
+  * ipython/Jupyter shells/kernels all share one cache within the same user 
+    account.
+  * `quickseries()` treats stdin or similar 'anonymous' invocation contexts 
+    like modules named "__quickseries_anonymous_caller_cache__" in the current 
+    working directory.
+  * In this mode, `quickseries()` also caches any results of `numba` JIT 
+    compilation.
+  * Caching is turned _off_ by default for `benchmark()`.
+* If you pass the `precision` argument to `quickseries()`, it will attempt to
+  guarantee that the function it returns will not cast input values to bit widths
+  greater than the value of `precision`. Legal values of `precision` are 16, 32, 
+  and 64. The returned function will not, however, attempt to reduce the precision
+  of its arguments. For instance, `quickseries("sin(x) + exp(x)", precision=32)`
+  will return a Python `float` if passed an `float`, and a `np.float64` `ndarray`
+  if passed a `np.float64` `ndarray`. However, it will return a `np.float32`
+  `ndarray` if passed a `np.float32` `ndarray`, which is not guaranteed without
+  the `precision=32` argument. 
+
+### argument naming
+
 * Multivariate `quickseries()`-generated functions always map positional arguments
   to variables in the string representation of the input function in alphanumeric
   order. This is in order to maintain consistency between slightly different 
@@ -59,8 +97,39 @@ approx runtime:
     * `"cos(x) * cos(pi * 2)"` will succeed, but `quickseries()` will interpret 
       it as "the cosine of a variable named 'x' times the cosine of two times
       the mathematical constant pi" -- in other words, as `"cos(x)"`.
-  * `quickseries.benchmark()` offers an easy way to test the accuracy and
-  efficiency of `quickseries.quickseries()`-generated functions.
+
+
+### limitations
+
+* `quickseries` only works for functions ℝ<sup>_n_</sup>🡒ℝ for finite _n_. In
+  programming terms, this means it will only produce functions that accept a 
+  fixed number of floating-point or integer arguments (which may be 'arraylike'
+  objects such as pandas `Series` or numpy `ndarrays`) and return a single 
+  floating-point value (or a 1-D floating-point array if passed arraylike 
+  arguments).
+* `quickseries` only works consistently on functions that are continuous and 
+  infinitely differentiable within the domain of interest. Specifically, they
+  should not have singularities, discontinuities, or infinite / undefined 
+  values at `point` or within `bounds`. Failure cases differ:
+  * `quickseries` will always fail on functions that are infinite/undefined 
+    at `point`, like `quickseries("ln(x)", point=-1)`.
+  * It will almost always fail on functions with a largeish interval of 
+    infinite/undefined values within `bounds`, such as
+    `quickseries("gamma(x + y)", bounds=((-1.1, 0), (0, 1)), point=(-0.5, 0))`.
+  * It will usually succeed but produce bad results on functions with 
+    singularities or point discontinuities within `bounds` or 
+    near `point` but not at `point`, such as `quickseries("tan(x)", bounds=(1, 2))`.
+  * It will often succeed, but usually produce bad results, on univariate 
+    functions that are continuous but not differentiable at `point`, such as 
+    `quickseries("abs(sin(x))", point=0)`. It will always fail on multivariate 
+    functions of this kind.
+* Functions given to `quickseries` must be expressed in strict closed form 
+  and include only finite terms. They cannot contain limits, integrals, 
+  derivatives, summations, continued fractions, etc.  
+* `quickseries` is not guaranteed to work for all such functions.
+
+### tips
+
 * Narrowing `bounds` will tend to make the approximation more accurate within
 those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
 ~20x greater accuracy within the (-1, 1) interval (with the downside that 
@@ -104,8 +173,6 @@ placing it in the middle of `bounds`.
   useful to generate different functions for different parts of your code, or 
   even to perform piecewise operations with multiple functions (although this 
   of course adds complexity and overhead).
-* Functions generated by `quickseries()` may in some cases be less 
-space/memory-efficient even if they are more time/compute-efficient.
 * By default, if you pass a simple polynomial expression to `quickseries()`
 (e.g. `"x**4 + 2 * x**3"`), it does not actually generate an approximation, 
 but instead simply attempts to rewrite it in a more efficient form.
@@ -124,44 +191,16 @@ but instead simply attempts to rewrite it in a more efficient form.
       rewrite of the input polynomial, but with slightly worse performance and 
       accuracy.
       * `point=0` often produces boring results for polynomial approximation.
-* `quickseries()` is also capable of auto-jitting the functions it generates
-with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
-install it with your preferred package manager.
-  * In many, but not all, cases, this will provide a significant performance
-    improvement, sometimes by an order of magnitude. It also permits calling
-    `quickseries`-generated functions from within other `numba`-compiled
-    functions.
-  * In addition to the other inconveniences that may arise from just-in-time
-  compilation, some functions that work well without `numba` may not work well
-  with `numba`.
-* By default, `quickseries()` caches the code it generates. If you wish to 
-  turn this behavior off, pass `cache=False`.
-  * If you call `quickseries()` with the same arguments from separate modules, 
-    it will write separate caches for each module.
-  * ipython/Jupyter shells/kernels all share one cache within the same user 
-    account.
-  * `quickseries()` treats stdin or similar 'anonymous' invocation contexts 
-    like modules named "__quickseries_anonymous_caller_cache__" in the current 
-    working directory.
-  * In this mode, `quickseries()` also caches the results of `numba` JIT 
-    compilation, if it is active.
-  * Caching is turned _off_ by default for `benchmark()`.
-* If you pass the `precision` argument to `quickseries()`, it will attempt to
-  guarantee that the function it returns will not cast input values to bit widths
-  greater than the value of `precision`. Legal values of `precision` are 16, 32, 
-  and 64. The returned function will not, however, attempt to reduce the precision
-  of its arguments. For instance, `quickseries("sin(x) + exp(x)", precision=32)`
-  will return a Python `float` if passed an `float`, and a `np.float64` `ndarray`
-  if passed a `np.float64` `ndarray`. However, it will return a `np.float32`
-  `ndarray` if passed a `np.float32` `ndarray`, which is not guaranteed without
-  the `precision=32` argument. 
-  * This can lead to significant speedups and memory usage improvements in
-    cases where you do not need the extra precision.
-  * Note that many libraries and formats do not support the "half-float" 
-    values generated by `quickseries` when passed `precision=16`. 
+* In many, but not all, cases, `jit=True` will provide a significant performance
+  improvement, sometimes by an order of magnitude. It also permits calling
+  `quickseries`-generated functions from within other `numba`-compiled
+  functions.
+  * Note that some functions may not be compatible with `numba`.
 * `quickseries` tends to be most effective on univariate functions, mostly 
    because the number of terms in a function's power expansion increases 
    geometrically with its number of free parameters.
+* Functions generated by `quickseries()` may in some cases be less 
+space/memory-efficient even if they are more time/compute-efficient.
 * By default, `quickseries` takes the analytic series expansion of the input 
   function as a strong suggestion rather than the last word on the topic, and
   performs a numerical optimization step to improve its goodness of fit across
@@ -182,39 +221,11 @@ install it with your preferred package manager.
     compiler implicitly performs a similar optimization, and computing these
     terms explicitly tends to be counterproductive. If you want `quickseries`
     to do it anyway, you can pass `prefactor=True`.
+* Specifying `precision` can lead to significant speedups and memory usage 
+  improvements. 
+* Many libraries and formats do not support the "half-float" values generated
+  by `quickseries` when passed `precision=16`. 
 
-
-## tips
-
-
-## limitations
-
-* `quickseries` only works for functions ℝ<sup>_n_</sup>🡒ℝ for finite _n_. In
-  programming terms, this means it will only produce functions that accept a 
-  fixed number of floating-point or integer arguments (which may be 'arraylike'
-  objects such as pandas `Series` or numpy `ndarrays`) and return a single 
-  floating-point value (or a 1-D floating-point array if passed arraylike 
-  arguments).
-* `quickseries` only works consistently on functions that are continuous and 
-  infinitely differentiable within the domain of interest. Specifically, they
-  should not have singularities, discontinuities, or infinite / undefined 
-  values at `point` or within `bounds`. Failure cases differ:
-  * `quickseries` will always fail on functions that are infinite/undefined 
-    at `point`, like `quickseries("ln(x)", point=-1)`.
-  * It will almost always fail on functions with a largeish interval of 
-    infinite/undefined values within `bounds`, such as
-    `quickseries("gamma(x)", bounds=(-1.1, 0), point=-0.5)`.
-  * It will usually succeed but produce bad results on functions with 
-    singularities or point discontinuities within `bounds` or 
-    near `point` but not at `point`, such as `quickseries("tan(x)", bounds=(1, 2))`.
-  * It will often succeed, but usually produce bad results, on univariate 
-    functions that are continuous but not differentiable at `point`, such as 
-    `quickseries("abs(sin(x))", point=0)`. It will always fail on multivariate 
-    functions of this kind.
-* Functions given to `quickseries` must be expressed in strict closed form 
-  and include only finite terms. They cannot contain limits, integrals, 
-  derivatives, summations, continued fractions, etc.  
-* `quickseries` is not guaranteed to work for all such functions.
 
 ## tests
 
