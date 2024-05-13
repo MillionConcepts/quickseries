@@ -131,18 +131,18 @@ efficiency of `quickseries.quickseries()`-generated functions.
 ### tips
 
 * Narrowing `bounds` will tend to make the approximation more accurate within
-those bounds. In the example above, setting `bounds` to `(-1, 1)` provides 
-~20x greater accuracy within the (-1, 1) interval (with the downside that 
-the resulting approximation will get pretty bad past about +/-pi/2).
-    * Like many optimizers, `quickseries()` tends to be much more effective 
-      closer to 0 and when its input arguments have similar orders of 
-      magnitude. If it is practical to shift/squeeze your data towards 0, you
-      may be able to get more use out of `quickseries`. This is largely due to
-      the fact that high-order polynomials are more numerically stable with 
-      smaller input values.
-    * Functions with a pole at 0, of course -- or whose series expansions have
-      a pole at 0 -- can present an exception to this rule. It will still
-      generally be better to keep their input values small.
+those bounds. In the example at the top of this README, setting `bounds` to
+`(-1, 1)` provides ~20x greater accuracy within the (-1, 1) interval (with 
+the downside that the resulting approximation will get pretty bad past about 
++/-pi/2).
+* Like many optimizers, `quickseries()` tends to be much more effective 
+  closer to 0 and when its input arguments have similar orders of 
+  magnitude. If it is practical to shift/squeeze your data towards 0, you
+  may be able to get more use out of `quickseries`. One of the biggest reasons
+  for this is that high-order polynomials are more numerically stable with 
+  smaller input values.
+  * Functions with a pole at 0 can of course present an exception to this 
+    rule. It will still generally be better to keep their input values small.
 * Increasing `nterms` will tend to make the approximation slower but more 
 accurate. In the example above, increasing `nterms` to 14 provides ~20x 
 greater accuracy but makes the approximation ~20% slower.
@@ -151,23 +151,23 @@ greater accuracy but makes the approximation ~20% slower.
   but makes the approximation *slower* than `np.sin(x) * np.cos(x)`.
   * Setting `nterms` too high can also cause the approximation algorithm to
   fail entirely.
-  * The location of accuracy/performance "sweet spots" in the parameter space 
-  depends on the function and the approximation bounds. If you want to 
-  seriously optimize a particular function in a particular interval, you will 
-  need to play around with these parameters.
-* The speedup (or lack thereof) that a `quickseries()`-generated approximation 
-  provides can vary greatly in different operating environments and on different 
-  processors.
-* It can also vary depending on the length of the input arguments. It generally 
-  provides most benefit on arrays with tens or hundreds of thousands of elements,
-  although this again varies depending on operating environment, the particular
-  approximated function, etc.
-* In general, `quickseries` provides more performance benefits for more 'complicated'
-  input functions. This is due to the implicit 'simplification' offered by the 
-  power series expansion.
 * For most functions, placing `point` in the middle of `bounds` will produce the
 best results, and if you don't pass `point` at all, `quickseries` defaults to 
 placing it in the middle of `bounds`.
+* The location of accuracy/performance "sweet spots" in the parameter space 
+depends on the function and the approximation bounds. If you want to 
+seriously optimize a particular function in a particular interval, you will 
+need to play around with these parameters.
+* The speedup (or lack thereof) that a `quickseries()`-generated approximation 
+  provides can vary greatly in different operating environments and on different 
+  processors.
+  * It can also vary depending on the length of the input arguments. It generally 
+    provides most benefit on arrays with tens or hundreds of thousands of elements,
+    although this again varies depending on operating environment, the particular
+    approximated function, etc.
+* In general, `quickseries` provides more performance benefits for more 'complicated'
+  input functions. This is due to the implicit 'simplification' offered by the 
+  power series expansion.
 * It is often difficult to generate a polynomial approximation that
   remains good across a wide range of input values. In some cases, it may be 
   useful to generate different functions for different parts of your code, or 
