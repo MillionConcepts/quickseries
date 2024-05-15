@@ -149,7 +149,7 @@ the downside that the resulting approximation will get pretty bad past about
 accurate. In the example above, increasing `nterms` to 14 provides ~20x 
 greater accuracy but makes the approximation ~20% slower.
   * This tends to have diminishing returns. In the example above, increasing 
-  `nterms` to 30 provides no meaningful increase in accuracy over `order=14`, 
+  `nterms` to 30 provides no meaningful increase in accuracy over `nterms=14`, 
   but makes the approximation *slower* than `np.sin(x) * np.cos(x)`.
   * Setting `nterms` too high can also cause the approximation algorithm to
   fail entirely.
