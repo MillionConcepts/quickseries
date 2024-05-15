@@ -60,7 +60,7 @@ efficiency of `quickseries.quickseries()`-generated functions.
   * ipython/Jupyter shells/kernels all share one cache within the same user 
     account.
   * `quickseries()` treats stdin or similar 'anonymous' invocation contexts 
-    like modules named "__quickseries_anonymous_caller_cache__" in the current 
+    like modules named `"__quickseries_anonymous_caller_cache__"` in the current 
     working directory.
   * In this mode, `quickseries()` also caches any results of `numba` JIT 
     compilation.
