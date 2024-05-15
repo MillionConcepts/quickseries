@@ -86,7 +86,7 @@ efficiency of `quickseries.quickseries()`-generated functions.
     * `quickseries("sin(y) * cos(x)")(1, 2)` also approximates `cos(1) * sin(2)` 
     * `quickseries("sin(x) * cos(y)")(1, 2)` approximates `sin(1) * cos(2)`
   * Note that you can always determine the argument order of a `quickseries()`-
-    generated function by using the `help()` builtin, `inspect.getfullargspec()`,
+    generated function by using the `help()` builtin or `inspect.getfullargspec()`,
     examining the function's docstring, etc.
 * Most legal Python variable names are allowable names for free variables.
   Named mathematical functions and constants are the major exceptions.
