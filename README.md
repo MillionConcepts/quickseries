@@ -21,7 +21,7 @@ The minimum supported version of Python is *3.11*.
 >>> from quickseries import quickseries
 
 >>> bounds = (-np.pi, np.pi)
->>> approx = quickseries("sin(x)*cos(x)", point=0, order=12, bounds=bounds)
+>>> approx = quickseries("sin(x)*cos(x)", point=0, nterms=12, bounds=bounds)
 >>> x = np.linspace(*bounds, 100000)
 >>> print(f"max error: {max(abs(np.sin(x) * np.cos(x) - approx(x)))}")
 >>> print("original runtime:")
