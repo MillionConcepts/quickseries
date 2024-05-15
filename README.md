@@ -198,7 +198,7 @@ but instead simply attempts to rewrite it in a more efficient form.
         lower-order terms.
         * For instance, `quickseries("x**8 + 2 * x ** 3 + 5 * x + 10" nterms=4,
           bounds=(-0.5, 0.5), approx_poly=True)` will produce a function that
-          almost exactly just computes `x ** 3 + 5 * x + 10`.
+          almost exactly just computes `2 * x ** 3 + 5 * x + 10`.
 * In many, but not all, cases, `jit=True` will provide a significant performance
   improvement, sometimes by an order of magnitude. It also permits calling
   `quickseries`-generated functions from within other `numba`-compiled
