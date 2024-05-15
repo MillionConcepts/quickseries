@@ -192,7 +192,13 @@ but instead simply attempts to rewrite it in a more efficient form.
       `quickseries()` generates will typically be very similar to a simple 
       rewrite of the input polynomial, but with slightly worse performance and 
       accuracy.
-      * `point=0` often produces boring results for polynomial approximation.
+      * `quickseries` may fail to approximate some low-order polynomials.
+      * The results of polynomial approximation will often be boring with `bounds`
+        near 0, because most polynomials are approximated well near 0 by their
+        lower-order terms.
+        * For instance, `quickseries("x**8 + 2 * x ** 3 + 5 * x + 10" nterms=4,
+          bounds=(-0.5, 0.5), approx_poly=True)` will produce a function that
+          almost exactly just computes `x ** 3 + 5 * x + 10`.
 * In many, but not all, cases, `jit=True` will provide a significant performance
   improvement, sometimes by an order of magnitude. It also permits calling
   `quickseries`-generated functions from within other `numba`-compiled
