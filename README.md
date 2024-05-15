@@ -82,8 +82,8 @@ efficiency of `quickseries.quickseries()`-generated functions.
   order. This is in order to maintain consistency between slightly different 
   forms of the same expression.
   * Examples:
-    * `quickseries("cos(x) * sin(y)")(1, 2)` approximates `sin(1) * cos(2)`
-    * `quickseries("sin(y) * cos(x)")(1, 2)` approximates `cos(1) * sin(2)` 
+    * `quickseries("cos(x) * sin(y)")(1, 2)` approximates `cos(1) * sin(2)`
+    * `quickseries("sin(y) * cos(x)")(1, 2)` also approximates `cos(1) * sin(2)` 
     * `quickseries("sin(x) * cos(y)")(1, 2)` approximates `sin(1) * cos(2)`
   * Note that you can always determine the argument order of a `quickseries()`-
     generated function by using the `help()` builtin, `inspect.getfullargspec()`,
