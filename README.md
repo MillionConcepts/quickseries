@@ -10,7 +10,7 @@ parameters) to ~100x (complicated functions, some parameter tuning).
 ## installation
 
 `quickseries` is available on PyPi; install with `pip install quickseries`.
-It will be available from `conda-forge` shortly.
+It is also available on conda-forge; install with `conda install quickseries --channel conda-forge`.
 
 The minimum supported version of Python is *3.11*.
 
