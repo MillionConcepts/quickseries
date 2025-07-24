@@ -4,6 +4,7 @@ from typing import Union, Sequence
 from dustgoggles.structures import listify
 import sympy as sp
 
+from quickseries.bases import Orthobasis
 from quickseries.sputils import LmSig
 
 
@@ -41,7 +42,7 @@ def series_lambda(
     x0: float = 0,
     nterms: int = 9,
     add_coefficients: bool = False,
-    modules: Union[str, Sequence[str]] = ("scipy", "numpy")
+    modules: Union[str, Sequence[str]] = ("scipy", "numpy"),
 ) -> tuple[LmSig, sp.Expr]:
     """
     Construct a power expansion of a sympy Expr or the string expression of a
@@ -81,8 +82,7 @@ def additive_combinations(n_terms, number):
     combinations = []  # NOTE: this is super gross-looking written as a chain
     for j in range(number + 1):
         combinations += [
-            (j, *t)
-            for t in additive_combinations(n_terms - 1, number - j)
+            (j, *t) for t in additive_combinations(n_terms - 1, number - j)
         ]
     return combinations
 
@@ -91,7 +91,7 @@ def multivariate_taylor(
     func: Union[str, sp.Expr],
     point: Sequence[float],
     nterms: int,
-    add_coefficients: bool = False
+    add_coefficients: bool = False,
 ) -> tuple[LmSig, sp.Expr]:
     func = sp.sympify(func) if isinstance(func, str) else func
     pointsyms = sorted(func.free_symbols, key=lambda s: str(s))
@@ -106,8 +106,7 @@ def multivariate_taylor(
     # noinspection PyTypeChecker
     fact = reduce(sp.Mul, [sp.factorial(i) for i in ixsyms])
     err = reduce(
-        sp.Mul,
-        [(x - a) ** i for x, a, i in zip(argsyms, pointsyms, ixsyms)]
+        sp.Mul, [(x - a) ** i for x, a, i in zip(argsyms, pointsyms, ixsyms)]
     )
     taylor = deriv / fact * err
     # TODO, probably: there's a considerably faster way to do this in some
@@ -115,7 +114,7 @@ def multivariate_taylor(
     decomp = additive_combinations(dimensionality, nterms - 1)
     built = reduce(
         sp.Add,
-        (taylor.subs({i: d for i, d in zip(ixsyms, d)}) for d in decomp)
+        (taylor.subs({i: d for i, d in zip(ixsyms, d)}) for d in decomp),
     ).doit()
     evaluated = built.subs({s: p for s, p in zip(pointsyms, point)}).evalf()
     # this next line is kind of aesthetic -- we just want the argument names
@@ -124,3 +123,43 @@ def multivariate_taylor(
     evaluated, coefsyms = _rectify_series(evaluated, add_coefficients)
     # noinspection PyTypeChecker
     return sp.lambdify(pointsyms + coefsyms, evaluated), evaluated
+
+
+def orthoproject_1d(
+    func: sp.Expr,
+    nterms: int,
+    basis: Orthobasis,
+    bounds: tuple[float, float],
+    use_quadrature=False,
+    quad_order=None,
+    add_coefficients=False,
+):
+    f_on_std = basis.transform_input(func, *bounds)
+    xi = next(iter(f_on_std.free_symbols))
+    coeffs = []
+    polys = [basis.orthopoly(n, xi) for n in range(nterms)]
+
+    if use_quadrature:
+        # Optional oversampling
+        quad_order = quad_order or (nterms + 2)
+        pts, wts = basis.quadrature(quad_order)
+
+        for n, Pn in enumerate(polys):
+            values = [
+                w * f_on_std.subs(xi, pt) * Pn.subs(xi, pt)
+                for pt, w in zip(pts, wts)
+            ]
+            coeff = sum(values) * (2 * n + 1) / 2
+            coeffs.append(coeff)
+    else:
+        for n, Pn in enumerate(polys):
+            integrand = f_on_std * Pn
+            coeff = sp.integrate(integrand, (xi, -1, 1)) * (2 * n + 1) / 2
+            coeffs.append(coeff.evalf())
+
+    poly_std = sum(c * Pn for c, Pn in zip(coeffs, polys))
+    # noinspection PyTypeChecker
+    poly_on_orig = basis.transform_output(poly_std, -1, 1)
+    expr, coefsyms = _rectify_series(poly_on_orig, add_coefficients)
+    x = tuple(func.free_symbols)[0]
+    return sp.lambdify([x, *coefsyms], expr), expr

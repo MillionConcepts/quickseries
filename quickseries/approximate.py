@@ -1,23 +1,37 @@
-import re
 from inspect import getfullargspec, signature
 from itertools import chain
+import re
+from types import NoneType
 from typing import Literal, Optional, Sequence, Union, Collection
 
-import numpy as np
-import sympy as sp
 from cytoolz import groupby
 from dustgoggles.func import gmap
+import numpy as np
+import sympy as sp
 
-from quickseries.expansions import multivariate_taylor, series_lambda
+from quickseries.bases import Orthobasis, BASIS_REGISTRY
+from quickseries.expansions import (
+    multivariate_taylor,
+    series_lambda,
+    orthoproject_1d,
+)
 from quickseries.simplefit import fit
 from quickseries.sourceutils import (
-    _cacheget, _cacheid, _finalize_quickseries, lastline
+    _cacheget,
+    _cacheid,
+    _finalize_quickseries,
+    lastline,
 )
 from quickseries.sputils import LmSig, lambdify
 
 
 EXP_PATTERN = re.compile(r"\w+ ?\*\* ?(\d+)")
 """what exponentials in sympy-lambdified functions look like"""
+
+TERM_PATTERN = re.compile(r"([+* (-]+|^)([\d.]+)(e[+\-]?\d+)?.*?([+* )]|$)")
+"""
+What numerical of sympy-lambdified (possibly rewritten) functions look like
+"""
 
 
 def is_simple_poly(expr: sp.Expr) -> bool:
@@ -33,7 +47,7 @@ def regexponents(text: str) -> tuple[int]:
 def _decompose(
     remaining: tuple[str],
     reduced: set[str],
-    replacements: list[tuple[int, list[int]]]
+    replacements: list[tuple[int, list[int]]],
 ) -> bool:
     if len(remaining) == 1:  # trivial case
         replacements[0][1][:] = [1 for _ in range(replacements[0][0])]
@@ -76,13 +90,57 @@ def _decompose(
 def optimize_exponents(
     exps: Sequence[int],
 ) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
+    """
+    Given a sequence of integer exponents greater than 1 that appear in an
+    expression, select exponents it might be useful to precompute in order to
+    calculate the expression more quickly: any exponents that are 'repeated',
+    even if only as an additive component of another exponent. More generally,
+    this provides a minimal set of joint additive decompositions of the
+    elements of `exps`.
+
+    For instance, given 'exps=(2, 8, 9)' (meaning that the expression
+    contains x ** 2, x ** 8, and x ** 9), optimize_exponents() will suggest:
+
+    * precompute x2 = x * x
+    * precompute x6 = x2 * x2 * x2 (note that this is only an intermediate
+        variable)
+    * replace x ** 2 with x2
+    * replace x ** 8 with x2 * x6
+    * replace x ** 9 with x * x2 * x6
+
+    Note:
+        This is typically called from`_rewrite_precomputed()`, meaning that
+        `exps` are typically exponents that appear in the Horner form of a
+        polynomial. Because Hornerization removes all repeated exponents that
+        do not require precomputation to remove, in practice, there will often
+        be no repeated exponents to precompute by this step, even if there
+        are repeated exponents in the non-Horner form of the polynomial.
+
+    Args:
+        exps: Sequence of integers representing exponents of terms in a
+            univariate expression.
+
+    Returns:
+        replacements: dict[int, list[int]] -- dict whose keys are elements of
+            `exps` that should be precomputed, and whose values are lists
+            containing keys of `variables` representing the exponents that
+            should be used to precompute them. In the (2, 8, 9) example above,
+            `replacements` would be `{2: [2], 8: [2, 6], 9: [2, 6, 1]}`.
+        variables: dict[int, list[int]] -- dict whose keys are exponents that
+            should be precomputed and substituted into the an expression, and
+            whose values are lists whose elements are either `1` or other keys
+            of `variables`, meaning the terms that should be used to
+            precompute the corresponding exponent. In the (2, 8, 9) example
+            above, `variables` would be `{2: [1, 1], 6: [2, 2, 2]}`.
+    """
     # list of tuples like: (power, [powers to use in decomposition])
-    replacements = [(e, [e]) for e in exps]
+    replacements = [(e, [e]) for e in sorted(exps)]
     # which powers have we already assessed?
     reduced = set()
     # which powers haven't we?
     remaining = tuple(chain(*[r[1] for r in replacements]))
-    # NOTE: _decompose() modifies remaning and reduced inplace
+    # NOTE: _decompose() modifies 'remaining' and 'reduced' inplace
+    # noinspection PyTypeChecker
     while _decompose(remaining, reduced, replacements) is False:
         remaining = tuple(chain(*[r[1] for r in replacements]))
     # this is analogous to casting to set: we no longer care about number of
@@ -110,12 +168,33 @@ def optimize_exponents(
 
 
 def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
+    """
+    Some library functions/classes, given a Python expression that contains
+    Python `int` or `float` literals, will upcast arguments to some default
+    precision (typically 64-bit). This function attempts to preempt that
+    behavior.
+
+    Given a Python expression as a string of source code,
+    `force_line_precision()` wraps all numeric literals in that expression
+    in numpy floating-point dtype constructors of bit width 'precision'.
+    In most cases, this will prevent a function generated from the source
+    code from upcasting its arguments past `precision`.
+
+    For instance, `force_line_precision('x*(x*x*x*x*x + 5)', 32)`
+    should return `'x*(x*x*x*x*x + float32(5.0))'`.
+
+    Args:
+        line: a line of Python source code, represented as a string
+        precision: the floating-point bit width to enforce in `line`. Can be
+            16, 32, or 64.
+
+    Returns:
+        A rewritten line of Python source code.
+    """
     constructor_rep = f"float{precision}"
     constructor = getattr(np, f"float{precision}")
     last, out = 0, ""
-    for match in re.finditer(
-        r"([+* (-]+|^)([\d.]+)(e[+\-]?\d+)?.*?([+* )]|$)", line
-    ):
+    for match in re.finditer(TERM_PATTERN, line):
         out += line[last : match.span()[0]]
         # don't replace exponents
         if match.group(1) == "**":
@@ -132,34 +211,19 @@ def force_line_precision(line: str, precision: Literal[16, 32, 64]) -> str:
     return out + line[last:]
 
 
-def rewrite(
-    poly_lambda: LmSig,
-    precompute: bool = True,
-    precision: Optional[Literal[16, 32, 64]] = None,
-) -> str:
-    # sympy will always place this on a single line. it includes
-    # the Python expression form of the hornerized polynomial
-    # and a return statement. lastline() grabs polynomial and strips return.
-    polyexpr = lastline(poly_lambda)
-    # remove pointless '1.0' terms
-    polyexpr = re.sub(r"(?:\*+)?1\.0\*+", "", polyexpr)
-    # names of arguments to the lambdified function
-    free = getfullargspec(poly_lambda).args
-    lines = []
-    if precompute is True:
-        polyexpr, factorlines = _rewrite_precomputed(polyexpr, free)
-        lines += factorlines
-    if precision is not None:
-        polyexpr = force_line_precision(polyexpr, precision)
-    lines.append(f"return {polyexpr}")
-    _, key = _cacheid()
-    lines.insert(0, f"def {key}({', '.join(free)}):")
-    return "\n    ".join(lines)
-
-
 def _rewrite_precomputed(
     polyexpr: str, free: Collection[str]
 ) -> tuple[str, list[str]]:
+    """
+    Rewrite a polynomial with precomputed exponents. `optimize_exponents()`
+    implements most of the domain logic; see that function's docstring for
+    general rationale. This function performs the string manipulation and
+    free variable handling that makes `optimize_exponents()` useful in the
+    context of the `quickseries()` pipeline.
+
+    This function is intended as a subroutine of `_rewrite()` and should
+    generally only be called by that function.
+    """
     # replacements: what factors we will decompose each exponent into
     # free: which factors we will define as variables, and their
     # "building blocks"
@@ -183,6 +247,40 @@ def _rewrite_precomputed(
     return polyexpr, factorlines
 
 
+def _rewrite(
+    poly_lambda: LmSig,
+    precompute: bool = True,
+    precision: Optional[Literal[16, 32, 64]] = None,
+) -> str:
+    """
+    Internal handler function for `quickseries.quickseries`. Given a
+    lambdified-by-sympy function that computes a polynomial, extract its
+    underlying polynomial expression, Hornerize it, and optionally /
+    heuristically apply exponent precomputation and precision enforcement.
+
+    This function should generally only be called by `_make_quickseries()`,
+    which itself should generally only be called by `quickseries()`.
+    """
+    # sympy will always place this on a single line. it includes
+    # the Python expression form of the hornerized polynomial
+    # and a return statement. lastline() grabs polynomial and strips return.
+    polyexpr = lastline(poly_lambda)
+    # remove pointless '1.0' terms
+    polyexpr = re.sub(r"(?:\*+)?1\.0\*+", "", polyexpr)
+    # names of arguments to the lambdified function
+    free = getfullargspec(poly_lambda).args
+    lines = []
+    if precompute is True:
+        polyexpr, factorlines = _rewrite_precomputed(polyexpr, free)
+        lines += factorlines
+    if precision is not None:
+        polyexpr = force_line_precision(polyexpr, precision)
+    lines.append(f"return {polyexpr}")
+    _, key = _cacheid()
+    lines.insert(0, f"def {key}({', '.join(free)}):")
+    return "\n    ".join(lines)
+
+
 def _pvec(
     bounds: Sequence[tuple[float, float]], offset_resolution: int
 ) -> list[np.ndarray]:
@@ -191,44 +289,10 @@ def _pvec(
     return [j[i] for j, i in zip(axes, indices)]
 
 
-def _perform_series_fit(
-    func: str | sp.Expr,
-    bounds: tuple[float, float] | Sequence[tuple[float, float]],
-    nterms: int,
-    fitres: int,
-    point: float | Sequence[float],
-    apply_bounds: bool,
-    is_poly: bool
-) -> tuple[sp.Expr, np.ndarray]:
-    if (len(bounds) == 1) and (is_poly is False):
-        approx, expr = series_lambda(func, point[0], nterms, True)
-    else:
-        approx, expr = multivariate_taylor(func, point, nterms, True)
-    lamb, vecs = lambdify(func), _pvec(bounds, fitres)
-    try:
-        dep = lamb(*vecs)
-    except TypeError as err:
-        # this is a potentially slow but unavoidable case
-        if "converted to Python scalars" not in str(err):
-            raise
-        dep = np.array([lamb(v) for v in vecs])
-    guess = [1 for _ in range(len(signature(approx).parameters) - len(vecs))]
-    params, _ = fit(
-        func=approx,
-        vecs=vecs,
-        dependent_variable=dep,
-        guess=guess,
-        bounds=(-5, 5) if apply_bounds is True else None,
-    )
-    # insert coefficients into polynomial
-    expr = expr.subs({f"a_{i}": coef for i, coef in enumerate(params)})
-    return expr, params
-
-
 def _makebounds(
     bounds: Optional[Sequence[tuple[float, float]] | tuple[float, float]],
     n_free: int,
-    point: Optional[Sequence[float] | float]
+    point: Optional[Sequence[float] | float],
 ) -> tuple[list[tuple[float, float]], list[float]]:
     bounds = (-1, 1) if bounds is None else bounds
     if not isinstance(bounds[0], (list, tuple)):
@@ -238,6 +302,73 @@ def _makebounds(
     elif not isinstance(point, (list, tuple)):
         point = [point for _ in bounds]
     return bounds, point
+
+
+
+def _dispatch_series_expansion(
+    basis, bounds, expr, is_poly, nterms, point, add_coeffs, usequad
+):
+    order = len(bounds)
+    if basis is None:
+        if (order == 1) and (is_poly is False):
+            approx, expr = series_lambda(expr, point[0], nterms, add_coeffs)
+        else:
+            approx, expr = multivariate_taylor(expr, point, nterms, add_coeffs)
+    else:
+        approx, expr = orthoproject_1d(
+            expr, nterms, basis, bounds[0], usequad, None, add_coeffs
+        )
+    return approx, expr
+
+
+def _perform_series_fit(
+    expr: str | sp.Expr,
+    bounds: Sequence[tuple[float, float]],
+    nterms: int,
+    fitres: int,
+    point: float | Sequence[float],
+    bound_series_fit: bool,
+    is_poly: bool,
+    basis: Orthobasis | None,
+    usequad: bool
+) -> tuple[sp.Expr, np.ndarray]:
+    lamb, vecs = lambdify(expr), _pvec(bounds, fitres)
+    approx, expr = _dispatch_series_expansion(
+        basis, bounds, expr, is_poly, nterms, point, True, usequad
+    )
+    try:
+        dep = lamb(*vecs)
+    except TypeError as err:
+        # this is a potentially slow but unavoidable case
+        if "converted to Python scalars" not in str(err):
+            raise
+        dep = np.array([lamb(v) for v in vecs])
+    guess = [1 for _ in range(len(signature(approx).parameters) - len(vecs))]
+    bbox = (-1, 1) if basis == "legendre" else (-5, 5)
+    params, _ = fit(
+        func=approx,
+        vecs=vecs,
+        dependent_variable=dep,
+        guess=guess,
+        bounds=bbox if bound_series_fit is True else None,
+    )
+    # insert coefficients into polynomial
+    expr = expr.subs({f"a_{i}": coef for i, coef in enumerate(params)})
+    return expr, params
+
+
+def _make_series(
+    expr: sp.Expr,
+    is_poly: bool,
+    bounds: Sequence[tuple[float, float]],
+    nterms: int,
+    point: float | Sequence[float],
+    basis: Orthobasis | None,
+    usequad: bool
+):
+    return _dispatch_series_expansion(
+        basis, bounds, expr, is_poly, nterms, point, False, usequad
+    )[1]
 
 
 def _make_quickseries(
@@ -251,27 +382,44 @@ def _make_quickseries(
     point: Optional[Sequence[float] | float],
     precision: Optional[Literal[16, 32, 64]],
     prefactor: bool,
+    basis: Orthobasis | None,
+    usequad: bool
 ) -> dict[str, sp.Expr | np.ndarray | str]:
+    # TODO: auto-basis-selection logic w/taylor fallback
+
     if len(expr.free_symbols) == 0:
         raise ValueError("func must have at least one free variable.")
     free = sorted(expr.free_symbols, key=lambda s: str(s))
-    bounds, point = _makebounds(bounds, len(free), point)
+    order = len(free)
+    bounds, point = _makebounds(bounds, order, point)
     output, is_poly = {}, is_simple_poly(expr)
+    if order > 1 and basis is not None:
+        raise NotImplementedError(
+            "Orthonormal basis expansion not yet implemented for multivariate "
+            "functions."
+        )
+    kwargs = {
+        "expr": expr,
+        "bounds": bounds,
+        "nterms": nterms,
+        "is_poly": is_poly,
+        "basis": basis,
+        "point": point,
+        "usequad": usequad
+    }
     if (approx_poly is True) or (is_poly is False):
         if fit_series_expansion is True:
             expr, output["params"] = _perform_series_fit(
-                expr, bounds, nterms, fitres, point, bound_series_fit, is_poly
+                **kwargs, fitres=fitres, bound_series_fit=bound_series_fit,
             )
-        elif (len(free) > 1) or (is_poly is True):
-            _, expr = multivariate_taylor(expr, point, nterms, False)
         else:
-            _, expr = series_lambda(expr, point[0], nterms, False)
+            expr = _make_series(**kwargs)
     # rewrite polynomial in horner form for fast evaluation
     output["expr"] = sp.horner(expr)
     polyfunc = sp.lambdify(free, output["expr"], ("scipy", "numpy"))
     # polish it and optionally rewrite it to precompute repeated powers or
     # force precision
-    return output | {"source": rewrite(polyfunc, prefactor, precision)}
+    return output | {"source": _rewrite(polyfunc, prefactor, precision)}
 
 
 def quickseries(
@@ -289,9 +437,21 @@ def quickseries(
     bound_series_fit: bool = False,
     extended_output: bool = False,
     cache: bool = True,
+    basis: str | Orthobasis | None = None,
+    usequad: bool = True
 ) -> Union[LmSig, tuple[LmSig, dict]]:
     if not isinstance(func, (str, sp.Expr)):
-        raise TypeError(f"Unsupported type for func {type(func)}.")
+        raise TypeError(
+            f"Unsupported type for func: expected str or Expr, "
+            f"got {type(func)}."
+        )
+    if (
+        not isinstance(basis, (Orthobasis, NoneType))
+        and basis not in BASIS_REGISTRY
+    ):
+        raise ValueError(f"Unknown basis {basis}.")
+    if isinstance(basis, str):
+        basis = BASIS_REGISTRY[basis]
     polyfunc, ext = None, {"cache": "off"}
     if cache is True:
         polyfunc, source = _cacheget(jit)
@@ -310,7 +470,9 @@ def quickseries(
             nterms,
             point,
             precision,
-            prefactor if prefactor is not None else not jit
+            prefactor if prefactor is not None else not jit,
+            basis,
+            usequad
         )
         polyfunc = _finalize_quickseries(ext["source"], jit, cache)
     if extended_output is True:

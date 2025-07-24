@@ -1,7 +1,9 @@
-import timeit
+import warnings
 from inspect import getfullargspec
 from itertools import product
 from time import time
+import timeit
+from types import MappingProxyType
 from typing import Union, Sequence, Optional
 
 import numpy as np
@@ -20,15 +22,26 @@ def _offset_check_cycle(
     quick: LmSig,
     vecs: Sequence[np.ndarray],
     worstpoint: Optional[list[float]],
-) -> tuple[float, float, float, tuple[float, float], list[float]]:
-    approx_y, orig_y = quick(*vecs), lamb(*vecs)
+) -> tuple[float, float, float, tuple[float, float], list[float], bool, bool]:
+    approx_y = quick(*vecs)
+    orig_y = lamb(*vecs)
     frange = (min(orig_y.min(), frange[0]), max(orig_y.max(), frange[1]))
     offset = abs(approx_y - orig_y)
     worstix = np.argmax(offset)
     if (new_absdiff := offset[worstix]) > absdiff:
         absdiff = new_absdiff
         worstpoint = [v[worstix] for v in vecs]
-    return absdiff, np.median(offset), np.mean(offset ** 2), frange, worstpoint
+    illposed = not bool(np.isfinite(orig_y).all())
+    misfit = not bool(np.isfinite(approx_y).all()) and not illposed
+    return (
+        absdiff,
+        np.median(offset),
+        np.mean(offset**2),
+        frange,
+        worstpoint,
+        illposed,
+        misfit,
+    )
 
 
 def benchmark(
@@ -38,12 +51,17 @@ def benchmark(
     timeit_cycles: int = 20000,
     testbounds="equal",
     cache: bool = False,
-    **quickkwargs
+    **quickkwargs,
 ) -> dict[str, sp.Expr | float | np.ndarray | str | list[float]]:
     lamb = lambdify(func)
     compile_start = time()
-    quick, ext = quickseries(
-        func, **(quickkwargs | {'extended_output': True, 'cache': cache})
+    to_fire = lambda: quickseries(
+        func, **(quickkwargs | {"extended_output": True, "cache": cache})
+    )
+    (quick, ext), gen_warnings = trap_runtime_warnings(to_fire)
+    ext["diverged"] = any(
+        "overflow" in w or "divide" in w or "zero" in w or "invalid" in w
+        for w in gen_warnings
     )
     gentime = time() - compile_start
     if testbounds == "equal":
@@ -52,57 +70,117 @@ def benchmark(
         )
     vecs = [np.linspace(*b, offset_resolution) for b in testbounds]
     if (pre := quickkwargs.get("precision")) is not None:
-        vecs = gmap(
-            lambda arr: arr.astype(getattr(np, f"float{pre}")), vecs
-        )
-    if len(testbounds) > 1:
-        # always check the extrema of the bounds
-        extrema = [[] for _ in vecs]
-        for p in product((-1, 1), repeat=len(vecs)):
-            for i, side in enumerate(p):
-                extrema[i].append(vecs[i][side])
-        extrema = [np.array(e) for e in extrema]
-        absdiff, _, __, frange, worstpoint = _offset_check_cycle(
-            0, (np.inf, -np.inf), lamb, quick, extrema, None
-        )
-        medians, mses = [], []
-        for _ in range(n_offset_shuffles):
-            gmap(np.random.shuffle, vecs)
-            absdiff, mediff, mse, frange, worstpoint = _offset_check_cycle(
-                absdiff, frange, lamb, quick, vecs, worstpoint
+        vecs = gmap(lambda arr: arr.astype(getattr(np, f"float{pre}")), vecs)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if len(testbounds) > 1:
+            absdiff, frange, illposed, mediff, misfit, mse, worstpoint = (
+                _check_offsets_nd(lamb, n_offset_shuffles, quick, vecs)
             )
-            medians.append(mediff)
-            mses.append(mse)
-        mediff, mse = np.median(medians), np.median(mses)
-    # no point in shuffling for 1D -- we're doing that for > 1D
-    # because it becomes quickly unreasonable in terms of memory
-    # to be exhaustive, but this _is_ exhaustive for 1D
-    else:
-        approx_y, orig_y = quick(*vecs), lamb(*vecs)
-        frange = (orig_y.min(), orig_y.max())
-        offset = abs(approx_y - orig_y)
-        worstix = np.argmax(offset)
-        absdiff = offset[worstix]
-        mediff = np.median(offset)
-        mse = np.mean(offset ** 2)
-        worstpoint = [vecs[0][worstix]]
-        del offset, orig_y, approx_y
-    # TODO: should probably permit specifying dtype for jitted
-    #  functions -- both here and in primary quickseries().
-    approx_time = timeit.timeit(lambda: quick(*vecs), number=timeit_cycles)
-    orig_time = timeit.timeit(lambda: lamb(*vecs), number=timeit_cycles)
-    orig_s = orig_time / timeit_cycles
-    approx_s = approx_time / timeit_cycles
-    return {
-        'absdiff': absdiff,
-        'reldiff': absdiff / np.ptp(frange),
-        'mediff': mediff,
-        'mse': mse,
-        'worstpoint': worstpoint,
-        'range': frange,
-        'orig_s': orig_s,
-        'approx_s': approx_s,
-        'timeratio': approx_s / orig_s,
-        'gentime': gentime,
-        'polyfunc': quick
-    } | ext
+        # no point in shuffling for 1D -- we're doing that for > 1D
+        # because it becomes quickly unreasonable in terms of memory
+        # to be exhaustive, but this _is_ exhaustive for 1D
+        else:
+            absdiff, frange, illposed, mediff, misfit, mse, worstpoint = (
+                check_offsets_1d(lamb, quick, vecs)
+            )
+        # TODO: should probably permit specifying numba signatures for jitted
+        #  functions -- both here and in primary quickseries().
+        approx_time = timeit.timeit(lambda: quick(*vecs), number=timeit_cycles)
+        orig_time = timeit.timeit(lambda: lamb(*vecs), number=timeit_cycles)
+        orig_s = orig_time / timeit_cycles
+        approx_s = approx_time / timeit_cycles
+        poly = ext["expr"].as_poly()
+        if poly is not None:
+            coeffs = poly.all_coeffs()
+            nonzero = sum(1 for c in coeffs if not c.equals(0))
+            ext |= {
+                "poly_degree": poly.degree(),
+                "nonzero_coeffs": nonzero,
+                "coeff_sparsity": nonzero / (poly.degree() + 1),
+            }
+        return {
+            "absdiff": float(absdiff),
+            "reldiff": float(absdiff / np.ptp(frange)),
+            "mediff": float(mediff),
+            "mse": float(mse),
+            "worstpoint": list(map(float, worstpoint)),
+            "range": tuple(map(float, frange)),
+            "orig_s": orig_s,
+            "approx_s": approx_s,
+            "timeratio": approx_s / orig_s,
+            "gentime": gentime,
+            "polyfunc": quick,
+            "illposed": illposed,
+            "misfit": misfit,
+        } | ext
+
+
+def check_offsets_1d(lamb, quick, vecs):
+    approx_y, orig_y = quick(*vecs), lamb(*vecs)
+    frange = (orig_y.min(), orig_y.max())
+    offset = abs(approx_y - orig_y)
+    worstix = np.argmax(offset)
+    absdiff = offset[worstix]
+    mediff = np.median(offset)
+    mse = np.mean(offset**2)
+    worstpoint = [vecs[0][worstix]]
+    illposed = not bool(np.isfinite(orig_y).all())
+    misfit = not bool(np.isfinite(approx_y).all()) and not illposed
+    return absdiff, frange, illposed, mediff, misfit, mse, worstpoint
+
+
+def _check_offsets_nd(lamb, n_offset_shuffles, quick, vecs):
+    # always check the extrema of the bounds
+    extrema = [[] for _ in vecs]
+    for p in product((-1, 1), repeat=len(vecs)):
+        for i, side in enumerate(p):
+            extrema[i].append(vecs[i][side])
+    extrema = [np.array(e) for e in extrema]
+    absdiff, _, __, frange, worstpoint, illposed, misfit = _offset_check_cycle(
+        0, (np.inf, -np.inf), lamb, quick, extrema, None
+    )
+    medians, mses = [], []
+    for _ in range(n_offset_shuffles):
+        gmap(np.random.shuffle, vecs)
+        absdiff, mediff, mse, frange, worstpoint, ip, mf = _offset_check_cycle(
+            absdiff, frange, lamb, quick, vecs, worstpoint
+        )
+        illposed = ip or illposed
+        misfit = mf or misfit
+        medians.append(mediff)
+        mses.append(mse)
+    mediff, mse = np.median(medians), np.median(mses)
+    return absdiff, frange, illposed, mediff, misfit, mse, worstpoint
+
+
+def trap_runtime_warnings(fn):
+    with warnings.catch_warnings(record=True) as wlog:
+        warnings.simplefilter("always")
+        try:
+            result = fn()
+        except Exception as e:
+            return None, [f"exception: {str(e)}"]
+        messages = [str(w.message) for w in wlog]
+        return result, messages
+
+
+def benchmark_multi(
+    func,
+    bounds,
+    param_grid: dict[str, list],
+    fixed: dict = None,
+    keyfn = lambda opts: ((k, v) for k, v in opts.items())
+):
+    if "bounds" in param_grid:
+        raise TypeError("Do not specify bounds in param_grid")
+    fixed = {} if fixed is None else fixed
+    results = {}
+    for combo in product(*param_grid.values()):
+        opts = dict(zip(param_grid.keys(), combo)) | fixed
+        key = keyfn(opts)
+        try:
+            results[key] = benchmark(func, bounds=bounds, **opts)
+        except Exception as ex:
+            results[key] = ex
+    return results

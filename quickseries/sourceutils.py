@@ -20,7 +20,8 @@ CACHE_ARGS = (
     "approx_poly",
     "precision",
     "fit_series_expansion",
-    "bound_series_fit"
+    "bound_series_fit",
+    "basis"
 )
 
 
@@ -46,10 +47,13 @@ def _cachekey(args, callfile=None):
     from quickseries import __version__
 
     # TODO: is this actually stable?
-    arghash = pickle.dumps(
-        {a: args.locals[a] for a in sorted(CACHE_ARGS)}
-        | {'f': callfile, '__version__': __version__}
-    )
+    arghash = {'f': callfile, '__version__': __version__}
+    for a in sorted(CACHE_ARGS):
+        try:
+            arghash[a] = pickle.dumps(args.locals[a])
+        except (AttributeError, pickle.PicklingError):
+            arghash[a] = str(args.locals[a])
+    arghash = str(arghash).encode("utf-8")
     # arbitrary cutoff for a reasonable tradeoff between collision safety and
     # readability
     return f"quickseries_{md5(arghash).hexdigest()}"[:-18]
