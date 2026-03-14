@@ -117,7 +117,7 @@ efficiency of `quickseries.quickseries()`-generated functions.
   Specifically, functions with singularities, discontinuities, or infinite / 
   undefined values at `point` or within `bounds` may produce undesirable 
   behavior. Note that you are more likely to get a good result in these 
-  situations by using an orthonormal basis rather than simple power expansion.
+  situations by using an orthogonal basis rather than simple power expansion.
   Bad behaviors may differ:
   * `quickseries` will usually fail on functions that are infinite/undefined 
     at `point`, like `quickseries("ln(x)", point=-1)`.
@@ -212,7 +212,7 @@ but instead simply attempts to rewrite it in a more efficient form.
 * `quickseries` tends to be most effective on univariate functions, mostly 
    because the number of terms in a function's polynomial approximation tends  
    to increase geometrically with its number of free parameters.
-* Although, intuitively, Chebyshev and Legendre orthonormal bases might seem 
+* Although, intuitively, Chebyshev and Legendre bases might seem 
   as if they should outperform simple power series expansions, this is not 
   necessarily -- or even generally -- the case. This is partly because of the
   cheaty postfit pass `quickseries()` performs by default, partly because
