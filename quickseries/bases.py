@@ -16,31 +16,36 @@ def s1(expr: Expr) -> Basic:
 @dataclass(frozen=True)
 class Orthobasis:
     name: str
-    orthopoly: Callable[[int, sp.Basic], sp.Expr]
+    orthopoly: Callable[[int, sp.Symbol], sp.Expr]
     domain: tuple[float, float]
     weight_fn: Callable[[sp.Symbol], sp.Expr | int]
-    transform_input: Callable[[sp.Expr, float, float], sp.Expr]
-    transform_output: Callable[[sp.Expr, float, float], sp.Expr]
+    transform_input: Callable[[sp.Expr, float, float, sp.Symbol], sp.Expr]
+    transform_output: Callable[[sp.Expr, float, float, sp.Symbol], sp.Expr]
     quadrature: Optional[Callable[[int], tuple]] = None
+    norm: Callable[[int], float] = lambda x: 1
 
 
 # TODO: transforms won't work with > 1 free variable
 def make_legendre_basis():
-    xi = Symbol('xi')
 
-    def transform_input(expr, a, b):
-        mapped = ((b - a) / 2) * xi + (a + b) / 2
-        return expr.subs(xi, mapped)
+    def transform_input(expr, a, b, sym):
+        mapped = ((b - a) / 2) * sym + (a + b) / 2
+        return expr.subs(sym, mapped)
 
-    def transform_output(poly_expr, a, b):
-        # noinspection PyTypeChecker
-        inv = (2 * s1(poly_expr) - (a + b)) / (b - a)
-        return expand(poly_expr.subs(xi, inv))
+    def transform_output(expr, a, b, sym):
+        # degenerate case
+        if isinstance(expr, int):
+            return expr
+        mapped = (2 * sym - (a + b)) / (b - a)
+        return sp.expand(expr.subs(sym, mapped))
 
     def quadrature(n):
         # TODO: configurable precision
         pts, wts = gauss_legendre(n, 7)
         return pts, wts
+
+    def norm(n):
+        return 2 / (2 * n + 1)
 
     return Orthobasis(
         name="legendre",
@@ -50,21 +55,23 @@ def make_legendre_basis():
         transform_input=transform_input,
         transform_output=transform_output,
         quadrature=quadrature,
+        norm=norm
     )
 
 
 def make_chebyshev_basis():
-    xi = sp.Symbol('xi')
 
-    def transform_input(expr, a, b):
-        # Map from [a, b] to [-1, 1]
-        mapped = ((b - a) / 2) * xi + (a + b) / 2
-        return expr.subs(xi, mapped)
+    def transform_input(expr, a, b, sym):
+        mapped = ((b - a) / 2) * sym + (a + b) / 2
+        return expr.subs(sym, mapped)
 
-    def transform_output(poly_expr, a, b):
-        # Invert the above mapping
-        inv = (2 * sp.Symbol(str(poly_expr.free_symbols.pop())) - (a + b)) / (b - a)
-        return sp.expand(poly_expr.subs(xi, inv))
+    def transform_output(expr, a, b, sym):
+        # degenerate case
+        if isinstance(expr, int):
+            return expr
+        mapped = (2 * sym - (a + b)) / (b - a)
+        return sp.expand(expr.subs(sym, mapped))
+
 
     def quadrature(n):
         # Gauss-Chebyshev quadrature of the first kind
@@ -73,14 +80,21 @@ def make_chebyshev_basis():
         wts = np.pi / n * np.ones(n)
         return pts.tolist(), wts.tolist()
 
+    def norm(n):
+        return np.pi if n == 0 else np.pi / 2
+
+    def weight(sym: sp.Symbol):
+        return sym / sp.sqrt(1 - sym ** 2)
+
     return Orthobasis(
         name="chebyshev",
         orthopoly=lambda n, v: sp.chebyshevt(n, v),
         domain=(-1, 1),
-        weight_fn=lambda x: 1 / sp.sqrt(1 - x**2),
+        weight_fn = weight,
         transform_input=transform_input,
         transform_output=transform_output,
         quadrature=quadrature,
+        norm=norm
     )
 
 

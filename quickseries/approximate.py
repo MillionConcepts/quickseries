@@ -14,6 +14,7 @@ from quickseries.expansions import (
     multivariate_taylor,
     series_lambda,
     orthoproject_1d,
+    orthoproject_nd,
 )
 from quickseries.simplefit import fit
 from quickseries.sourceutils import (
@@ -304,21 +305,42 @@ def _makebounds(
     return bounds, point
 
 
-
 def _dispatch_series_expansion(
-    basis, bounds, expr, is_poly, nterms, point, add_coeffs, usequad
+    basis: Orthobasis | None,
+    bounds,
+    expr,
+    is_poly,
+    nterms,
+    point,
+    add_coeffs,
+    usequad,
+    prunetol,
 ):
     order = len(bounds)
     if basis is None:
         if (order == 1) and (is_poly is False):
-            approx, expr = series_lambda(expr, point[0], nterms, add_coeffs)
+            approx, expr, nprune = series_lambda(
+                expr, point[0], nterms, add_coeffs, prunetol=prunetol
+            )
         else:
-            approx, expr = multivariate_taylor(expr, point, nterms, add_coeffs)
-    else:
-        approx, expr = orthoproject_1d(
-            expr, nterms, basis, bounds[0], usequad, None, add_coeffs
+            approx, expr, nprune = multivariate_taylor(
+                expr, point, nterms, add_coeffs, prunetol=prunetol
+            )
+    elif order == 1:
+        approx, expr, nprune = orthoproject_1d(
+            expr, nterms, basis, bounds[0], usequad, None, add_coeffs, prunetol
         )
-    return approx, expr
+    else:
+        approx, expr, nprune = orthoproject_nd(
+            expr,
+            nterms,
+            tuple(basis for _ in range(order)),
+            bounds,
+            usequad,
+            add_coeffs,
+            prunetol,
+        )
+    return approx, expr, nprune
 
 
 def _perform_series_fit(
@@ -330,11 +352,12 @@ def _perform_series_fit(
     bound_series_fit: bool,
     is_poly: bool,
     basis: Orthobasis | None,
-    usequad: bool
-) -> tuple[sp.Expr, np.ndarray]:
+    usequad: bool,
+    prunetol: float | None
+) -> tuple[sp.Expr, np.ndarray, int]:
     lamb, vecs = lambdify(expr), _pvec(bounds, fitres)
-    approx, expr = _dispatch_series_expansion(
-        basis, bounds, expr, is_poly, nterms, point, True, usequad
+    approx, expr, nprune = _dispatch_series_expansion(
+        basis, bounds, expr, is_poly, nterms, point, True, usequad, prunetol
     )
     try:
         dep = lamb(*vecs)
@@ -354,7 +377,7 @@ def _perform_series_fit(
     )
     # insert coefficients into polynomial
     expr = expr.subs({f"a_{i}": coef for i, coef in enumerate(params)})
-    return expr, params
+    return expr, params, nprune
 
 
 def _make_series(
@@ -364,11 +387,30 @@ def _make_series(
     nterms: int,
     point: float | Sequence[float],
     basis: Orthobasis | None,
-    usequad: bool
+    usequad: bool,
+    prunetol: float | None
 ):
-    return _dispatch_series_expansion(
-        basis, bounds, expr, is_poly, nterms, point, False, usequad
-    )[1]
+    res = _dispatch_series_expansion(
+        basis, bounds, expr, is_poly, nterms, point, False, usequad, prunetol
+    )
+    return res[1], res[2]
+
+
+def apply_assumptions(expr, bounds):
+    """
+    substitute with variables containing quickseries' assumptions:
+    they are (a) real, (b) if associated bounds are strictly > 0, positive,
+    and if strictly < 0, negative
+    """
+    for s, b in zip(expr.free_symbols, bounds):
+        assumptions = {"real": True}
+        if min(b) > 0:
+            assumptions["positive"] = True
+        elif max(b) < 0:
+            assumptions["negative"] = True
+        sym = sp.Symbol(str(s), **assumptions)
+        expr = expr.subs(s, sym)
+    return expr
 
 
 def _make_quickseries(
@@ -376,28 +418,34 @@ def _make_quickseries(
     bound_series_fit: bool,
     bounds: Optional[Sequence[tuple[float, float]] | tuple[float, float]],
     expr: sp.Expr,
-    fit_series_expansion: bool,
+    fit_series_expansion: bool | None,
     fitres: int,
     nterms: int,
     point: Optional[Sequence[float] | float],
     precision: Optional[Literal[16, 32, 64]],
     prefactor: bool,
     basis: Orthobasis | None,
-    usequad: bool
+    usequad: bool,
+    prunetol: float | None
 ) -> dict[str, sp.Expr | np.ndarray | str]:
     # TODO: auto-basis-selection logic w/taylor fallback
 
     if len(expr.free_symbols) == 0:
-        raise ValueError("func must have at least one free variable.")
+        raise ValueError("Function must have at least one free variable.")
+    ndim = len(expr.free_symbols)
+    if basis is not None and fit_series_expansion is None and ndim > 1:
+        # numerical optimization pass on orthonormal basis projections of
+        # expressions with > 1 free variable rarely produces valid results
+        # (parameters are not meaningfully covariant) so is usually just a
+        # waste of time or a way to introduce small amounts of numerical error
+        fit_series_expansion = False
+    elif fit_series_expansion is None:
+        fit_series_expansion = True
+    bounds, point = _makebounds(bounds, ndim, point)
+    expr = apply_assumptions(expr, bounds)
     free = sorted(expr.free_symbols, key=lambda s: str(s))
-    order = len(free)
-    bounds, point = _makebounds(bounds, order, point)
     output, is_poly = {}, is_simple_poly(expr)
-    if order > 1 and basis is not None:
-        raise NotImplementedError(
-            "Orthonormal basis expansion not yet implemented for multivariate "
-            "functions."
-        )
+    output["orig_expr"] = expr
     kwargs = {
         "expr": expr,
         "bounds": bounds,
@@ -405,15 +453,18 @@ def _make_quickseries(
         "is_poly": is_poly,
         "basis": basis,
         "point": point,
-        "usequad": usequad
+        "usequad": usequad,
+        "prunetol": prunetol
     }
     if (approx_poly is True) or (is_poly is False):
         if fit_series_expansion is True:
-            expr, output["params"] = _perform_series_fit(
-                **kwargs, fitres=fitres, bound_series_fit=bound_series_fit,
+            expr, output["params"], output["nprune"] = _perform_series_fit(
+                **kwargs,
+                fitres=fitres,
+                bound_series_fit=bound_series_fit,
             )
         else:
-            expr = _make_series(**kwargs)
+            expr, output["nprune"] = _make_series(**kwargs)
     # rewrite polynomial in horner form for fast evaluation
     output["expr"] = sp.horner(expr)
     polyfunc = sp.lambdify(free, output["expr"], ("scipy", "numpy"))
@@ -433,13 +484,15 @@ def quickseries(
     approx_poly: bool = False,
     jit: bool = False,
     precision: Optional[Literal[16, 32, 64]] = None,
-    fit_series_expansion: bool = True,
+    fit_series_expansion: bool | None = None,
     bound_series_fit: bool = False,
     extended_output: bool = False,
     cache: bool = True,
-    basis: str | Orthobasis | None = None,
-    usequad: bool = True
+    basis: str | Orthobasis | None = "chebyshev",
+    usequad: bool = True,
+    prunetol: float | None = 1e-12
 ) -> Union[LmSig, tuple[LmSig, dict]]:
+    basis = None if basis == "taylor" else basis
     if not isinstance(func, (str, sp.Expr)):
         raise TypeError(
             f"Unsupported type for func: expected str or Expr, "
@@ -472,7 +525,8 @@ def quickseries(
             precision,
             prefactor if prefactor is not None else not jit,
             basis,
-            usequad
+            usequad,
+            prunetol
         )
         polyfunc = _finalize_quickseries(ext["source"], jit, cache)
     if extended_output is True:

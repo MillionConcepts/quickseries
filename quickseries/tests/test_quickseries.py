@@ -4,6 +4,7 @@ import time
 import timeit
 
 import numpy as np
+from scipy.special import gamma
 
 from quickseries import quickseries
 from quickseries.sputils import lambdify
@@ -15,7 +16,7 @@ RNG = np.random.default_rng()
 
 def test_quickseries_1():
     kwargs = {
-        'func': 'sin(x) * ln(x)',
+        'func': 'sin(x) * ln(x + cos(x))',
         'bounds': (0.5, 3.5),
         'nterms': 9,
         'cache': False
@@ -31,9 +32,14 @@ def test_quickseries_1():
     quick_nofit_value = quick_nofit(ax)
     maxerr = abs(quick_value - lambda_value).max()
     maxerr_nofit = abs(quick_nofit_value - lambda_value).max()
-    assert maxerr < 1e-4
-    assert maxerr_nofit < 1e-2
-    assert maxerr < maxerr_nofit
+    assert maxerr < 3e-4
+    assert maxerr_nofit < 3e-4
+
+    meanerr = abs(quick_value - lambda_value).mean()
+    meanerr_nofit = abs(quick_nofit_value - lambda_value).mean()
+    assert meanerr < 1e-4
+    assert meanerr_nofit < 1e-4
+    assert meanerr < meanerr_nofit
     assert quick_time < lambda_time
 
 
@@ -55,11 +61,28 @@ def test_quickseries_2():
     quick_value = quick(ax0, ax1)
     quick_time = timeit.timeit(lambda: quick(ax0, ax1), number=50)
     maxerr = abs(quick_value - lambda_value).max()
-    print(maxerr)
-    print(max(abs(lambda_value)))
     assert maxerr < 0.01
-    print(quick_time, lambda_time)
     assert quick_time < lambda_time
+
+
+def test_quickseries_3():
+    kwargs = {
+        'func': '1 / gamma(x)',
+        'bounds': (0, 1),
+        'nterms': 7,
+        'cache': False
+    }
+    ax0 = np.arange(*kwargs['bounds'], 0.0005)
+    value = 1 / gamma(ax0)
+    base_time = timeit.timeit(lambda: 1 / gamma(ax0), number=50)
+
+    for basis in ("legendre", "chebyshev"):
+        quick = quickseries(**kwargs, basis=basis)
+        quick_value = quick(ax0)
+        quick_time = timeit.timeit(lambda: quick(ax0), number=50)
+        maxerr = abs(quick_value - value).max()
+        assert quick_time < base_time
+        assert maxerr < 1e-5
 
 
 def test_approx_poly():

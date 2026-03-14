@@ -3,7 +3,6 @@ from inspect import getfullargspec
 from itertools import product
 from time import time
 import timeit
-from types import MappingProxyType
 from typing import Union, Sequence, Optional
 
 import numpy as np
@@ -58,7 +57,10 @@ def benchmark(
     to_fire = lambda: quickseries(
         func, **(quickkwargs | {"extended_output": True, "cache": cache})
     )
-    (quick, ext), gen_warnings = trap_runtime_warnings(to_fire)
+    result, gen_warnings = trap_runtime_warnings(to_fire)
+    if result is None:  # unhandled exception
+        return {"exception": gen_warnings[0]}
+    quick, ext = result
     ext["diverged"] = any(
         "overflow" in w or "divide" in w or "zero" in w or "invalid" in w
         for w in gen_warnings
@@ -92,13 +94,17 @@ def benchmark(
         approx_s = approx_time / timeit_cycles
         poly = ext["expr"].as_poly()
         if poly is not None:
-            coeffs = poly.all_coeffs()
-            nonzero = sum(1 for c in coeffs if not c.equals(0))
-            ext |= {
-                "poly_degree": poly.degree(),
-                "nonzero_coeffs": nonzero,
-                "coeff_sparsity": nonzero / (poly.degree() + 1),
-            }
+            try:
+                coeffs = poly.all_coeffs()
+                nonzero = sum(1 for c in coeffs if not c.equals(0))
+                ext |= {
+                    "poly_degree": poly.degree(),
+                    "nonzero_coeffs": nonzero,
+                    "coeff_sparsity": nonzero / (poly.degree() + 1),
+                }
+            except sp.polys.polyerrors.PolynomialError:
+                # all_coeffs() does not support multivariate polynomials
+                pass
         return {
             "absdiff": float(absdiff),
             "reldiff": float(absdiff / np.ptp(frange)),
@@ -160,7 +166,7 @@ def trap_runtime_warnings(fn):
         try:
             result = fn()
         except Exception as e:
-            return None, [f"exception: {str(e)}"]
+            return None, [e]
         messages = [str(w.message) for w in wlog]
         return result, messages
 
@@ -170,7 +176,7 @@ def benchmark_multi(
     bounds,
     param_grid: dict[str, list],
     fixed: dict = None,
-    keyfn = lambda opts: ((k, v) for k, v in opts.items())
+    keyfn = lambda opts: tuple((k, v) for k, v in opts.items())
 ):
     if "bounds" in param_grid:
         raise TypeError("Do not specify bounds in param_grid")
