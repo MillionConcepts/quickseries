@@ -1,4 +1,4 @@
 from quickseries.approximate import quickseries
 from quickseries.benchmark import benchmark
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"

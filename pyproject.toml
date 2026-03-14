@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quickseries"
+version = "0.3.0"
+authors = [
+  { name = "Michael St. Clair", email = "mstclair@millionconcepts.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+  "dustgoggles",
+  "numpy",
+  "scipy",
+  "sympy",
+]
+
+[project.optional-dependencies]
+jit = ["numba"]
+tests = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/millionconcepts/quickseries.git"
+
+[tool.setuptools.packages.find]
+where = ["."]

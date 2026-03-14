@@ -1,7 +1,7 @@
 # quickseries
 
-`quickseries` generates Python functions that perform fast vectorized power 
-series approximations of mathematical functions. It can provide performance 
+`quickseries` generates Python functions that perform fast vectorized 
+polynomial approximations of mathematical functions. It can provide performance 
 improvements ranging from ~3x (simple functions, no fiddling around with 
 parameters) to ~100x (complicated functions, some parameter tuning).
 
@@ -48,6 +48,9 @@ approx runtime:
   specifies the value (or values, for multivariate functions) about which
   to generate the series expansion. See "limitations" and "tips" below for 
   examples and discussion.
+* `quickseries()` can use either simple power series expansion, a Chebyshev 
+   basis (`basis='chebyshev'`), or a Legendre basis (`basis='legendre'`). The 
+   default (`basis=None`) is naive power expansion.
 * `quickseries()` is capable of auto-jitting the functions it generates
 with `numba`. Pass the `jit=True` argument. `numba` is an optional dependency; 
 install it with your preferred package manager.
@@ -109,22 +112,24 @@ efficiency of `quickseries.quickseries()`-generated functions.
   objects such as pandas `Series` or numpy `ndarrays`) and return a single 
   floating-point value (or a 1-D floating-point array if passed arraylike 
   arguments).
-* `quickseries` only works consistently on functions that are continuous and 
-  infinitely differentiable within the domain of interest. Specifically, they
-  should not have singularities, discontinuities, or infinite / undefined 
-  values at `point` or within `bounds`. Failure cases differ:
-  * `quickseries` will always fail on functions that are infinite/undefined 
+* `quickseries` is only guaranteed to work well on functions that are 
+  continuous and infinitely differentiable within the domain of interest. 
+  Specifically, functions with singularities, discontinuities, or infinite / 
+  undefined values at `point` or within `bounds` may produce undesirable 
+  behavior. Note that you are more likely to get a good result in these 
+  situations by using an orthonormal basis rather than simple power expansion.
+  Bad behaviors may differ:
+  * `quickseries` will usually fail on functions that are infinite/undefined 
     at `point`, like `quickseries("ln(x)", point=-1)`.
-  * It will almost always fail on functions with a largeish interval of 
+  * It will also usually fail on functions with a largeish interval of 
     infinite/undefined values within `bounds`, such as
     `quickseries("gamma(x + y)", bounds=((-1.1, 0), (0, 1)), point=(-0.5, 0))`.
-  * It will usually succeed but produce bad results on functions with 
+  * It will usually succeed but often produce bad results on functions with 
     singularities or point discontinuities within `bounds` or 
     near `point` but not at `point`, such as `quickseries("tan(x)", bounds=(1, 2))`.
-  * It will often succeed, but usually produce bad results, on univariate 
-    functions that are continuous but not differentiable at `point`, such as 
-    `quickseries("abs(sin(x))", point=0)`. It will always fail on multivariate 
-    functions of this kind.
+  * It will often succeed, but unreliably, on functions that are continuous but 
+    not differentiable at `point`, such as `quickseries("abs(sin(x))", point=0)`.
+    The Chebyshev basis is recommended if you must attempt to approximate such functions.
 * Functions given to `quickseries` must be expressed in strict closed form 
   and include only finite terms. They cannot contain limits, integrals, 
   derivatives, summations, continued fractions, etc.  
@@ -169,7 +174,7 @@ need to play around with these parameters.
     approximated function, etc.
 * In general, `quickseries` provides more performance benefits for more 'complicated'
   input functions. This is due to the implicit 'simplification' offered by the 
-  power series expansion.
+  polynomial approximation.
 * It is often difficult to generate a polynomial approximation that
   remains good across a wide range of input values. In some cases, it may be 
   useful to generate different functions for different parts of your code, or 
@@ -205,8 +210,17 @@ but instead simply attempts to rewrite it in a more efficient form.
   functions.
   * Note that some functions may not be compatible with `numba`.
 * `quickseries` tends to be most effective on univariate functions, mostly 
-   because the number of terms in a function's power expansion increases 
-   geometrically with its number of free parameters.
+   because the number of terms in a function's polynomial approximation tends  
+   to increase geometrically with its number of free parameters.
+* Although, intuitively, Chebyshev and Legendre orthonormal bases might seem 
+  as if they should outperform simple power series expansions, this is not 
+  necessarily -- or even generally -- the case. This is partly because of the
+  cheaty postfit pass `quickseries()` performs by default, partly because
+  what is ideally optimal is not necessarily what is empirically optimal
+  in a particular computing environment, and partly because `sympy` knows a 
+  bunch of really good power series tricks.
+  * They may still work well for many functions power series do _not_ work 
+    well for, however.  
 * Functions generated by `quickseries()` may in some cases be less 
 space/memory-efficient even if they are more time/compute-efficient.
 * By default, `quickseries` takes the analytic series expansion of the input 
@@ -238,5 +252,4 @@ space/memory-efficient even if they are more time/compute-efficient.
 ## tests
 
 `quickseries` has a few simple tests. You can run them by executing `pytest`
-in the repository's root directory. More comprehensive test coverage is 
-planned.
+in the repository's root directory.

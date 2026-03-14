@@ -1,3 +1,8 @@
+"""
+This is an experimental module eventually intended to find an optimal
+quickseries strategy for a particular function under a particular set of
+performance constraints. It is not currently recommended for use.
+"""
 import dataclasses as dc
 from functools import partial
 from numbers import Real
